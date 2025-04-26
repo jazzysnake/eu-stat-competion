@@ -1,0 +1,20 @@
+services:
+  valkey:
+    image: valkey/valkey:8.1
+    container_name: valkey
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./valkey.conf:/usr/local/etc/valkey/valkey.conf:ro
+      - valkey-data:/data
+    command: valkey-server /usr/local/etc/valkey/valkey.conf
+    networks:
+      - eu-stat-network
+
+volumes:
+  valkey-data:
+
+networks:
+  eu-stat-network:
+    driver: bridge
