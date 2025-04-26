@@ -39,7 +39,7 @@ class GenaiClient:
         self.safety_settings=safety_settings
 
     @staticmethod
-    def new(model:str="gemini-2.5-pro-preview-03-25") -> 'GenaiClient':
+    def new(model:str=PRO) -> 'GenaiClient':
         api_key=os.environ.get('GEMINI_API_TOKEN')
         if api_key is None:
             raise ValueError('GEMINI_API_TOKEN variable not set, failed to init client')
@@ -48,7 +48,7 @@ class GenaiClient:
     @staticmethod
     def get_simple_message(
             msg: str,
-            role: Literal['user', 'assistant'] = 'user',
+            role: Literal['user', 'model'] = 'user',
     ) -> list[types.Content]:
         return [
             types.Content(
@@ -67,15 +67,14 @@ class GenaiClient:
             for c in contents
         ]
 
-
-    def generate(
+    async def generate(
         self,
         contents: list[types.Content],
         thinking_budget:int=0,
         response_schema: Type[pydantic.BaseModel] | None = None,
         google_search: bool = False,
         model: str | None = None,
-    ):
+    ) -> types.GenerateContentResponse:
         response_type = "text/plain" if response_schema is None else "application/json"
         generate_content_config = types.GenerateContentConfig(
             thinking_config = types.ThinkingConfig(
@@ -88,7 +87,7 @@ class GenaiClient:
             ] if google_search else None
         )
         try:
-            response = self.client.models.generate_content(
+            response = await self.client.aio.models.generate_content(
                 model=self.model if model is None else model,
                 contents=contents,
                 config=generate_content_config,

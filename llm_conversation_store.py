@@ -1,5 +1,5 @@
 import json
-from typing import Any, Literal
+from typing import Literal
 
 from google.genai import types
 from genai_utils import GenaiClient
@@ -21,7 +21,7 @@ class ConversationStore:
         k = ConversationStore.__create_key(company_name, action)
         simple_contents = GenaiClient.get_simple_contents(conversation_contents)
 
-        mapping = {f'message{i}':json.dumps(c) for i,c in enumerate(simple_contents)}
+        mapping = {f'message:{i}':json.dumps(c) for i,c in enumerate(simple_contents)}
         self.client.client.hset(k, mapping=mapping)
 
     @staticmethod
