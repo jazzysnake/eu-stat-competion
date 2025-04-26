@@ -44,6 +44,30 @@ async def find_site(
     conversation_store: ConversationStore,
     company_name: str,
 ) -> SiteDiscoveryResponse:
+    """Finds website information for a given company using a Generative AI model.
+
+    This function prompts the AI to find the official website, investor relations
+    page, and the latest financial report link for the specified company.
+    It utilizes the AI model's browsing capabilities and stores the conversation 
+    history in the provided ConversationStore.
+    The final structured response is parsed into a Pydantic model.
+
+    Args:
+        gen_client: An initialized GenaiClient instance.
+        conversation_store: An initialized ConversationStore instance to log the interaction.
+        company_name: The name of the company to search for.
+
+    Returns:
+        A SiteDiscoveryResponse object containing the official website link,
+        and potentially the investor relations page and financial report link.
+
+    Raises:
+        genai_utils.GenerationError: If the AI model fails to generate a response or
+                                     if the response cannot be parsed into the
+                                     SiteDiscoveryResponse schema.
+        pydantic.ValidationError: If the final AI response does not conform to the
+                                  SiteDiscoveryResponse schema.
+    """
     today = dt.datetime.today()
     prompt = f"""Please find the official website of {company_name}.
                 Try to find the direct link to the latest financial report of the company.

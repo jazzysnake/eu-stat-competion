@@ -10,6 +10,11 @@ class ConversationStore:
         self,
         client: valkey_utils.ValkeyClient,
         ) -> None:
+        """Initializes the ConversationStore with a Valkey client instance.
+
+        Args:
+            client: An initialized ValkeyClient instance for database interaction.
+        """
         self.client = client
 
     def add(
@@ -18,6 +23,17 @@ class ConversationStore:
         action: Literal['site_find'],
         conversation_contents: list[types.Content],
     ) -> None:
+        """Adds a conversation history to the Valkey store.
+
+        The conversation is stored as a hash, with each message serialized as JSON.
+        The key is generated based on the company name and action.
+
+        Args:
+            company_name: The name of the company the conversation relates to.
+            action: The specific action or context of the conversation (e.g., 'site_find').
+            conversation_contents: The list of `google.genai.types.Content` or `ContentDict`
+                                   objects representing the conversation.
+        """
         k = ConversationStore.__create_key(company_name, action)
         simple_contents = GenaiClient.get_simple_contents(conversation_contents)
 
@@ -26,6 +42,16 @@ class ConversationStore:
 
     @staticmethod
     def __create_key(company_name: str, action: str) -> str:
+        """Creates a standardized Valkey key for storing conversation data.
+
+        Normalizes the company name for consistency.
+
+        Args:
+            company_name: The name of the company.
+            action: The action associated with the conversation.
+
+        Returns:
+            A formatted string to be used as a Valkey key (e.g., 'conversation:site_find:adecco_group_ag')."""
         return f'conversation:{action}:{company_name}'
 
 

@@ -19,6 +19,21 @@ class ValkeyClient:
         socket_timeout: int = 5,
         socket_connect_timeout: int = 5,
     ) -> None:
+        """Initializes the Valkey client and connects to the specified instance.
+
+        Attempts to ping the server upon connection to verify reachability.
+
+        Args:
+            host: The hostname or IP address of the Valkey server.
+            port: The port number of the Valkey server.
+            db: The database number to connect to (default is 0).
+            password: The password for authentication (optional).
+            socket_timeout: Timeout in seconds for socket operations (default 5).
+            socket_connect_timeout: Timeout in seconds for establishing connection (default 5).
+
+        Raises:
+            ConnectionError: If the client fails to connect to or ping the Valkey instance.
+        """
         self.host = host
         self.port = port
         self.db = db
@@ -41,6 +56,18 @@ class ValkeyClient:
 
     @staticmethod
     def new() -> 'ValkeyClient':
+        """Creates a new ValkeyClient instance using settings from environment variables.
+
+        Reads 'VALKEY_HOST', 'VALKEY_PORT', 'VALKEY_DB', and 'VALKEY_PW' environment
+        variables, providing defaults for host ('localhost'), port (6379), and db (0).
+
+        Returns:
+            A configured and connected ValkeyClient instance.
+
+        Raises:
+            ConfigurationError: If environment variables contain invalid values (e.g., non-integer port)
+                               or if the connection fails using these settings (rethrown from __init__).
+        """
         try:
             host = os.environ.get('VALKEY_HOST', 'localhost')
             port_str = os.environ.get('VALKEY_PORT', '6379')

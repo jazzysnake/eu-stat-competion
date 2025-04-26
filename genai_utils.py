@@ -26,6 +26,15 @@ class GenaiClient:
         model:str=PRO,
         harm_block: types.HarmBlockThreshold = types.HarmBlockThreshold.OFF,
     ) -> None:
+        """Initializes the GenaiClient.
+
+        Sets up the connection to the Google Generative AI API using the provided
+        API key, model name, and safety settings.
+
+        Args:
+            api_key: The Google Generative AI API key.
+            model: The name of the model to use (e.g., 'gemini-1.5-pro-preview-0514'). Defaults to PRO.
+            harm_block: The safety threshold for blocking harmful content. Defaults to OFF."""
         self.model = model
         self.client = genai.Client(
             api_key=api_key,
@@ -40,6 +49,17 @@ class GenaiClient:
 
     @staticmethod
     def new(model:str=PRO) -> 'GenaiClient':
+        """Creates a new GenaiClient instance using the API key from environment variables.
+
+        Args:
+            model: The name of the generative model to use. Defaults to the PRO model constant.
+
+        Returns:
+            A configured GenaiClient instance.
+
+        Raises:
+            ValueError: If the 'GEMINI_API_TOKEN' environment variable is not set.
+        """
         api_key=os.environ.get('GEMINI_API_TOKEN')
         if api_key is None:
             raise ValueError('GEMINI_API_TOKEN variable not set, failed to init client')
@@ -50,6 +70,15 @@ class GenaiClient:
             msg: str,
             role: Literal['user', 'model'] = 'user',
     ) -> list[types.Content]:
+        """Creates a simple Google GenAI Content object list for a single message.
+
+        Args:
+            msg: The text content of the message.
+            role: The role of the message sender ('user' or 'model'). Defaults to 'user'.
+
+        Returns:
+            A list containing a single `google.generativeai.types.Content`.
+        """
         return [
             types.Content(
                 role=role,
@@ -62,6 +91,16 @@ class GenaiClient:
     def get_simple_contents(
         contents: list[types.Content]
     ) -> list[dict[str, str | list[str]]]:
+        """Converts a list of GenAI Content objects to a list of dicts that contain the text only.
+
+        This is useful for serialization or logging.
+
+        Args:
+            contents: A list of `google.generai.types.Content`
+
+        Returns:
+            A list of dictionaries, where each dictionary has 'role' (str) and
+            'parts' (list[str]) keys representing the text parts."""
         return [
             {'role': c.role, 'parts': [p.text for p in c.parts]}
             for c in contents
@@ -75,6 +114,25 @@ class GenaiClient:
         google_search: bool = False,
         model: str | None = None,
     ) -> types.GenerateContentResponse:
+        """Generates content using the Google Generative AI API.
+
+        Args:
+            contents: A list of `google.genai.types.Content` or `ContentDict` objects
+                      representing the conversation history or prompt.
+            thinking_budget: An optional token budget the model can use for thinking.
+            response_schema: An optional Pydantic model to structure the JSON response.
+                             If provided, response_mime_type is set to 'application/json'.
+            google_search: Whether to enable the Browsing tool (replaces Google Search explicitly).
+            model: An optional model name to override the client's default model
+                   for this specific call.
+
+
+        Returns:
+            The `google.generai.types.GenerateContentResponse` object from the API.
+
+        Raises:
+            GenerationError: If the content generation API call fails.
+        """
         response_type = "text/plain" if response_schema is None else "application/json"
         generate_content_config = types.GenerateContentConfig(
             thinking_config = types.ThinkingConfig(
