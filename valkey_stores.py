@@ -44,8 +44,6 @@ class ConversationStore:
     def __create_key(company_name: str, action: str) -> str:
         """Creates a standardized Valkey key for storing conversation data.
 
-        Normalizes the company name for consistency.
-
         Args:
             company_name: The name of the company.
             action: The action associated with the conversation.
@@ -54,4 +52,43 @@ class ConversationStore:
             A formatted string to be used as a Valkey key (e.g., 'conversation:site_find:adecco_group_ag')."""
         return f'conversation:{action}:{company_name}'
 
+class CompanySiteStore:
+    def __init__(
+        self,
+        client: valkey_utils.ValkeyClient,
+        ) -> None:
+        """Initializes the CompanySiteStore with a Valkey client instance.
 
+        Args:
+            client: An initialized ValkeyClient instance for database interaction.
+        """
+        self.client = client
+
+    def add(
+        self,
+        company_name:str,
+        site_discovery_result,
+    ) -> None:
+        """Adds a site discovery result to the Valkey store.
+
+        The result is stored as a hash, with each message serialized as JSON.
+        The key is generated based on the company name and id.
+
+        Args:
+            company_name: The name of the company data belongs to .
+            site_discovery_result: The result of looking up the company's website.
+        """
+        k = CompanySiteStore.__create_key(company_name)
+
+        self.client.client.hset(k, mapping=site_discovery_result.model_dump())
+
+    @staticmethod
+    def __create_key(company_name: str) -> str:
+        """Creates a standardized Valkey key for storing site discovery data.
+
+        Args:
+            company_name: The name of the company.
+
+        Returns:
+            A formatted string to be used as a Valkey key (e.g., 'site_discovery:adecco_group_ag')."""
+        return f'site_discovery:{company_name}'

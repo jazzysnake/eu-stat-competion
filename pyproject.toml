@@ -1,0 +1,13 @@
+[project]
+name = "eu-stat-competition"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "crawl4ai>=0.6.1",
+    "google-genai>=1.12.1",
+    "pydantic>=2.11.3",
+    "valkey[libvalkey]>=6.1.0",
+    "yfinance>=0.2.56",
+]
