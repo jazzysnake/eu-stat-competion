@@ -1,20 +1,12 @@
+import asyncio
 import logging
-import pydantic
 import genai_utils
 import datetime as dt
-from typing import Annotated
-from valkey_stores import ConversationStore, CompanySiteStore
 
-class SiteDiscoveryResponse(pydantic.BaseModel):
-    """Pydantic model for structuring the response from the site discovery process."""
-    official_website_link: Annotated[
-        str | None,
-        pydantic.Field(description='The official homepage URL of the company')
-    ]
-    investor_relations_page: Annotated[
-        str | None,
-        pydantic.Field(description='The investor relations page or subdomain of the company)')
-    ]
+from utils import batched
+from valkey_stores import ConversationStore, CompanySiteStore
+from models import SiteDiscoveryResponse
+from valkey_utils import ConfigurationError
 
 class SiteFinder:
     def __init__(
@@ -23,11 +15,15 @@ class SiteFinder:
         conversation_store: ConversationStore,
         company_site_store: CompanySiteStore,
         company_names: list[str],
+        concurrent_threads: int = 1,
     ) -> None:
         self.genai_client = gen_client
         self.conversation_store = conversation_store
         self.company_site_store = company_site_store
         self.company_names = company_names
+        if concurrent_threads < 1:
+            raise ConfigurationError('concurrent_threads must be larger than 1')
+        self.concurrent_threads = concurrent_threads
 
     async def run(self) -> None:
         """Runs the site finding workflow for all companies.
@@ -37,12 +33,23 @@ class SiteFinder:
         in the configured stores.
         """
         logging.info(f"Site finding started")
-        for company in self.company_names:
-            logging.info(f"Starting site finding for: {company}")
-            res = await self.find_site(company)
-            self.company_site_store.add(company, res)
-            logging.info(f"Site finding completed for: {company}")
+        for company_batch in batched(self.company_names, self.concurrent_threads):
+            tasks = [self.process_company(c) for c in company_batch]
+            await asyncio.gather(*tasks)
         logging.info(f"Site finding finished")
+
+    async def process_company(
+        self,
+        company: str,
+    ) -> None:
+        site = self.company_site_store.get(company)
+        if site is not None and (site.official_website_link is not None or site.investor_relations_page is not None):
+            return
+        logging.info(f"Starting site finding for: {company}")
+        res = await self.find_site(company)
+        self.company_site_store.store(company, res)
+        logging.info(f"Site finding completed for: {company}")
+
 
     async def find_site(
         self,
@@ -77,14 +84,14 @@ class SiteFinder:
 
                     Include full links in your answer. The current date is {today}."""
         contents = genai_utils.GenaiClient.get_simple_message(prompt)
-        self.conversation_store.add(company_name, 'site_find', contents)
+        self.conversation_store.store(company_name, 'site_find', contents)
         response = await self.genai_client.generate(
             contents=contents,
             thinking_budget=1024,
             google_search=True,
         )
         contents.append(response.candidates[0].content)
-        self.conversation_store.add(company_name, 'site_find', contents)
+        self.conversation_store.store(company_name, 'site_find', contents)
         contents = contents + genai_utils.GenaiClient.get_simple_message(
             "Provide the answer in a structured manner. Only include links present in your previous message."
         )
@@ -95,5 +102,5 @@ class SiteFinder:
             response_schema=SiteDiscoveryResponse,
         )
         contents.append(response.candidates[0].content)
-        self.conversation_store.add(company_name, 'site_find', contents)
+        self.conversation_store.store(company_name, 'site_find', contents)
         return SiteDiscoveryResponse.model_validate_json(response.text)

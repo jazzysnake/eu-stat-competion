@@ -113,6 +113,7 @@ class GenaiClient:
         response_schema: Type[pydantic.BaseModel] | None = None,
         google_search: bool = False,
         model: str | None = None,
+        temperature: float = 0,
     ) -> types.GenerateContentResponse:
         """Generates content using the Google Generative AI API.
 
@@ -140,6 +141,7 @@ class GenaiClient:
             ),
             response_mime_type=response_type,
             response_schema=response_schema,
+            temperature=temperature,
             tools=[
                 types.Tool(google_search=types.GoogleSearch())
             ] if google_search else None
