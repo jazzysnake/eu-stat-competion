@@ -56,6 +56,7 @@ async def main():
         gcs_uploader.upload_dir('./pdf_downloads')
 
 
+        report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
         logging.info('Closing valkey connection...')
         valkey_client.close()
         await simple_crawler.close()

@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 import datetime as dt
 
 from models import AnnualReportLink, AnnualReportLinkWithGCS, ModelActionResponse, ModelActionResponseWithMetadata, SiteDiscoveryResponse
@@ -257,6 +258,22 @@ class AnnualReportLinkStore:
         if report.get('gcs_link') is not None:
             return AnnualReportLinkWithGCS.model_validate(report)
         return AnnualReportLink.model_validate(report)
+
+    def fill_solution_csv(self, path_to_csv: str, separator:str =';') -> None:
+        data = pd.read_csv(path_to_csv, sep=separator)
+        data['SRC'] = data['SRC'].astype(object)
+        data = data.set_index(['NAME', 'TYPE']).sort_index()
+        reports = self.client.client.keys(self.__create_key("*"))
+        for report in reports:
+            company = report.removeprefix(self.__create_key(''))
+            link = self.get(company)
+            if link is None or link.link is None:
+                continue
+            data.loc[(company, 'FIN_REP'), 'SRC'] = link.link
+            if link.refyear is not None:
+                data.loc[(company, 'FIN_REP'), 'REFYEAR'] = link.refyear
+        data = data.reset_index().sort_values(by=['ID', 'TYPE'], ascending=[True, True])
+        data[['ID', 'NAME', 'TYPE', 'SRC', 'REFYEAR']].to_csv(path_to_csv, sep=separator, na_rep='', index=False)
 
     @staticmethod
     def __create_key(company_name: str) -> str:
