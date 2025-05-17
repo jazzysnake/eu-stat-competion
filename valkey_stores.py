@@ -2,10 +2,9 @@ import json
 import pandas as pd
 import datetime as dt
 
-from models import AnnualReportLink, AnnualReportLinkWithGCS, ModelActionResponse, ModelActionResponseWithMetadata, SiteDiscoveryResponse
+from models import AnnualReportLink, AnnualReportLinkWithPaths, ModelActionResponse, ModelActionResponseWithMetadata, SiteDiscoveryResponse, AnnualReportInfo
 
 import valkey_utils
-import gcs_utils
 
 from typing import Literal
 
@@ -27,7 +26,7 @@ class ConversationStore:
     def store(
         self,
         company_name:str,
-        action: Literal['site_find', 'report_find'],
+        action: Literal['site_find', 'report_find', 'info_extract'],
         conversation_contents: list[types.Content],
     ) -> None:
         """Adds a conversation history to the Valkey store.
@@ -245,27 +244,41 @@ class AnnualReportLinkStore:
         company_name: str,
         local_path: str,
     ) -> None:
-        k = self.__create_key(company_name)
-        rep = self.get(k)
+        rep = self.get(company_name)
         if rep is None or rep.link is None:
             raise ValueError('Report entry does not exist in the db or is invalid')
+        k = self.__create_key(company_name)
         self.client.client.hset(k, 'local_path', local_path)
 
-    def get(self, company_name: str) -> AnnualReportLink | AnnualReportLinkWithGCS | None:
-        report = self.client.client.hgetall(AnnualReportLinkStore.__create_key(company_name))
+    def get(self, company_name: str) -> AnnualReportLink | AnnualReportLinkWithPaths | None:
+        k = AnnualReportLinkStore.__create_key(company_name)
+        report = self.client.client.hgetall(k)
         if report is None:
             return 
-        if report.get('gcs_link') is not None:
-            return AnnualReportLinkWithGCS.model_validate(report)
-        return AnnualReportLink.model_validate(report)
+        if report.get('gcs_link') is not None or report.get('local_path') is not None:
+            return AnnualReportLinkWithPaths(
+                link=report.get('link'),
+                gcs_link=report.get('gcs_link'),
+                local_path=report.get('local_path'),
+                refyear=report.get('refyear'),
+            )
+        return AnnualReportLink(
+                link=report.get('link'),
+                refyear=report.get('refyear'),
+            )
+
+    def get_companies(self) -> list[str]:
+        prefix = self.__create_key('')
+        return [
+            k.removeprefix(prefix) 
+            for k in self.client.client.keys(self.__create_key('*'))]
 
     def fill_solution_csv(self, path_to_csv: str, separator:str =';') -> None:
         data = pd.read_csv(path_to_csv, sep=separator)
         data['SRC'] = data['SRC'].astype(object)
         data = data.set_index(['NAME', 'TYPE']).sort_index()
-        reports = self.client.client.keys(self.__create_key("*"))
-        for report in reports:
-            company = report.removeprefix(self.__create_key(''))
+        companies = self.get_companies()
+        for company in companies:
             link = self.get(company)
             if link is None or link.link is None:
                 continue
@@ -279,11 +292,39 @@ class AnnualReportLinkStore:
     def __create_key(company_name: str) -> str:
         return f'annual_report_link:{company_name}'
 
+class AnnualReportInfoStore:
+    def __init__(
+        self,
+        client: valkey_utils.ValkeyClient,
+        ) -> None:
+        self.client = client
 
+    def store(
+        self,
+        company_name:str,
+        annual_report: AnnualReportInfo,
+    ) -> None:
+        k = self.__create_key(company_name)
+        mapping = annual_report.model_dump(exclude_none=True)
+        self.client.client.hset(k, mapping=mapping)
 
+    def get(
+        self,
+        company_name: str,
+    ) -> AnnualReportInfo | None:
+        k = self.__create_key(company_name)
+        info = self.client.client.hgetall(k)
+        if not info:
+            return None
+        return AnnualReportInfo(
+            country_code=info.get('country_code'),
+            employee_count=info.get('employee_count'),
+            assets_value=info.get('assets_value'),
+            currency_code_assets=info.get('currency_code_assets'),
+            net_turnover=info.get('net_turnover'),
+            currency_code_turnover=info.get('currency_code_turnover'),
+            main_activity_description=info.get('main_activity_description'),
+        )
 
-
-
-
-
-
+    def __create_key(self, company: str) -> str:
+        return f'annual_report_info:{company}'

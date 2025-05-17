@@ -9,9 +9,10 @@ import gcs_utils
 import report_downloader
 import site_finder
 import fin_rep_finder
+import fin_data_extractor
 import genai_utils
 import valkey_utils
-from valkey_stores import AnnualReportLinkStore, ConversationStore, CompanySiteStore, ModelActionStore
+from valkey_stores import AnnualReportInfoStore, AnnualReportLinkStore, ConversationStore, CompanySiteStore, ModelActionStore
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -23,12 +24,13 @@ async def main():
         logging.info("Initializing clients...")
         gen_client = genai_utils.GenaiClient.new(model=genai_utils.PRO)
         valkey_client = valkey_utils.ValkeyClient.new()
-        gcs_uploader = gcs_utils.GCSBatchUploader.new(5)
+        gcs_uploader = gcs_utils.GCSBatchUploader.new(10)
 
         convo_store = ConversationStore(valkey_client)
         site_store = CompanySiteStore(valkey_client)
         report_link_store = AnnualReportLinkStore(valkey_client)
         model_action_store = ModelActionStore(valkey_client)
+        report_store = AnnualReportInfoStore(valkey_client)
 
         simple_crawler = crawler.Crawler()
 
@@ -54,14 +56,30 @@ async def main():
             report_download_directory='./pdf_downloads/',
             concurrent_threads=10,
         )
+        data_extractor = fin_data_extractor.FinDataExtractor(
+            gen_client=gen_client,
+            conversation_store=convo_store,
+            report_link_store=report_link_store,
+            report_info_store=report_store,
+            report_directory='./pdf_downloads/',
+            concurrent_threads=10,
+        )
         logging.info("Clients initialized successfully.")
-        await sf.run()
-        await finfinder.run()
-        gcs_uploader.upload_dir('./pdf_downloads')
+
+        #await sf.run()
+
+        #await finfinder.run()
 
         await rep_dler.run()
 
-        report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
+        #gcs_uploader.upload_dir('./pdf_downloads')
+        #report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
+
+        await data_extractor.run()
+
+
+        
+
         logging.info('Closing valkey connection...')
         valkey_client.close()
         await simple_crawler.close()

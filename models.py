@@ -63,7 +63,15 @@ class AnnualReportLink(pydantic.BaseModel):
             default=None,
         )
     ]
-class AnnualReportLinkWithGCS(AnnualReportLink):
+class AnnualReportLinkWithPaths(AnnualReportLink):
+    local_path: Annotated[
+        str | None,
+        pydantic.Field(
+            description='Path to the locally downloaded pdf',
+            default=None,
+        )
+    ]
+
     gcs_link: Annotated[
         str | None,
         pydantic.Field(
@@ -86,6 +94,58 @@ class SiteDiscoveryResponse(pydantic.BaseModel):
         pydantic.Field(
             description='The investor relations page or subdomain of the company)',
             default=None,
+        )
+    ]
+
+
+class AnnualReportInfo(pydantic.BaseModel):
+    country_code: Annotated[
+        str | None,
+        pydantic.Field(
+        description='The ISO 3166-1 alpha-2 country code where the company is headquartered at (2 uppercase letters).',
+        pattern=r'^[A-Z]{2}$',
+        default=None,
+    )]
+    employee_count: Annotated[
+        int | None,
+        pydantic.Field(
+        description='The number of employees employed by the company (worldwide).',
+        default=None,
+    )]
+    assets_value: Annotated[
+        int | None,
+        pydantic.Field(
+        description='Total assets of the company expressed in nominal value.',
+        default=None,
+    )]
+    net_turnover: Annotated[
+        int | None,
+        pydantic.Field(
+        description='Net turnover for the company in the financial year',
+        default=None,
+        )
+    ]
+    currency_code_assets: Annotated[
+        str | None,
+        pydantic.Field(
+        description='ISO 4217 currency code of the currency in which the assets_value is denominated (3 uppercase letters).',
+        pattern=r'^[A-Z]{3}$',
+        default=None,
+    )
+    ]
+    currency_code_turnover: Annotated[
+        str | None,
+        pydantic.Field(
+        description='ISO 4217 currency code of the currency in which net_turnover is denominated (3 uppercase letters).',
+        pattern=r'^[A-Z]{3}$',
+        default=None,
+    )
+    ]
+    main_activity_description: Annotated[
+        str | None,
+        pydantic.Field(
+        description='Brief description (5 sentences max) of the main activity performed by the company',
+        default=None,
         )
     ]
 
