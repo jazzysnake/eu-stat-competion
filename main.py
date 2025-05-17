@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 import crawler
 import gcs_utils
+import report_downloader
 import site_finder
 import fin_rep_finder
 import genai_utils
@@ -38,7 +39,6 @@ async def main():
             companies,
             concurrent_threads=10,
         )
-
         finfinder = fin_rep_finder.FinRepFinder(
             simple_crawler,
             gen_client,
@@ -49,12 +49,17 @@ async def main():
             report_download_directory='./pdf_downloads/',
             concurrent_threads=10,
         )
-
+        rep_dler = report_downloader.ReportDownloader(
+            report_link_store=report_link_store,
+            report_download_directory='./pdf_downloads/',
+            concurrent_threads=10,
+        )
         logging.info("Clients initialized successfully.")
         await sf.run()
         await finfinder.run()
         gcs_uploader.upload_dir('./pdf_downloads')
 
+        await rep_dler.run()
 
         report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
         logging.info('Closing valkey connection...')

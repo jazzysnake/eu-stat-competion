@@ -67,8 +67,8 @@ class GenaiClient:
 
     @staticmethod
     def get_simple_message(
-            msg: str,
-            role: Literal['user', 'model'] = 'user',
+        msg: str,
+        role: Literal['user', 'model'] = 'user',
     ) -> list[types.Content]:
         """Creates a simple Google GenAI Content object list for a single message.
 

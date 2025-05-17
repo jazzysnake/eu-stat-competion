@@ -39,7 +39,6 @@ class PDFDownloader:
         """
         effective_client_options = client_options or {}
         effective_headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
             **(default_headers or {})
         }
         effective_client_options.setdefault('follow_redirects', True)
@@ -90,6 +89,7 @@ class PDFDownloader:
         self,
         url: str,
         filename: str,
+        spoof_browser_user_agent: bool = False,
     ) -> None:
         """
         Downloads a PDF from a URL asynchronously using streaming.
@@ -101,7 +101,8 @@ class PDFDownloader:
         Returns:
             The path of the downloaded file if successful, None otherwise.
         """
-        async with self.async_client.stream("GET", url) as response:
+        headers = None if not spoof_browser_user_agent else {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'}
+        async with self.async_client.stream("GET", url, headers=headers) as response:
             response.raise_for_status()
 
             async with aiofiles.open(filename, "wb") as f:

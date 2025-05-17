@@ -1,7 +1,5 @@
-import os
 import asyncio
 import logging
-import httpx
 
 import crawler
 import genai_utils
@@ -9,8 +7,6 @@ import valkey_stores
 
 from utils import batched
 from models import ModelActionResponse, ModelActionResponseWithMetadata, AnnualReportLink
-from pdf_downloader import PDFDownloader
-from crawler import HTMLDownloader
 from valkey_utils import ConfigurationError
 
 class FinRepFinder:
@@ -39,8 +35,6 @@ class FinRepFinder:
         if concurrent_threads < 1:
             raise ConfigurationError('concurrent_threads must be > 1')
         self.concurrent_threads = concurrent_threads
-        self.pdf_downloader = PDFDownloader()
-        self.html_downloader = HTMLDownloader()
 
     async def run(self) -> None:
         companies = self.companies
@@ -57,50 +51,14 @@ class FinRepFinder:
         self,
         company: str,
     ) -> None:
-        if self.annual_report_link_store.get(company) is not None:
+        existing_report=self.annual_report_link_store.get(company) 
+        if existing_report is not None and existing_report.link is not None:
             return
         res = await self.find_annual_report(company)
         if res is None or res.link is None:
             logging.warning(f'Could not find report link for {company}')
             return
         self.annual_report_link_store.store(company,res)
-        try:
-            download_path = await self.download_annual_report(res, company)
-            self.annual_report_link_store.add_local_path(company, download_path)
-        except httpx.HTTPStatusError as exc:
-            logging.error(f"HTTP error {exc.response.status_code} - {exc.response.reason_phrase} while downloading {exc.request.url}")
-        except httpx.RequestError as exc:
-            logging.error(f"Network error while downloading {exc.request.url}: {exc}")
-        except IOError as exc:
-            logging.error(f"File I/O error saving report for company {company}: {exc}")
-        except Exception as exc:
-            logging.error(f"An unexpected error occurred during download of report for {company}: {exc}", exc_info=True)
-
-
-    @staticmethod
-    def __clean_filename(name: str) -> str:
-        return name.replace(' ', '_').replace('\\', '').replace('/', '')
-
-    async def download_annual_report(
-        self,
-        report_link: AnnualReportLink,
-        company: str,
-    ) -> str:
-        if report_link.link is None:
-            raise ValueError('Link must not be None')
-        refyear = '' if report_link.refyear is None else str(report_link.refyear)
-        fname = '_'.join([company,refyear])
-        is_pdf = await self.pdf_downloader.is_pdf(report_link.link)
-        
-        fname = fname + '.pdf' if is_pdf else fname + ".html"
-        fname = FinRepFinder.__clean_filename(fname)
-        fname = os.path.join(self.report_download_directory, fname)
-        if is_pdf:
-            await self.pdf_downloader.download_async(report_link.link, fname)
-            return fname
-        await self.html_downloader.download(report_link.link, fname)
-        return fname
-
 
     async def find_annual_report(self, company: str) -> AnnualReportLink | None:
         done = self.model_action_store.get_done_action(company)
