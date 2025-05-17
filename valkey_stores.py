@@ -26,7 +26,7 @@ class ConversationStore:
     def store(
         self,
         company_name:str,
-        action: Literal['site_find', 'report_find', 'info_extract'],
+        action: Literal['site_find', 'report_find', 'info_extract', 'nace_classify'],
         conversation_contents: list[types.Content],
     ) -> None:
         """Adds a conversation history to the Valkey store.
@@ -328,3 +328,27 @@ class AnnualReportInfoStore:
 
     def __create_key(self, company: str) -> str:
         return f'annual_report_info:{company}'
+
+class NaceClassificationStore:
+    def __init__(
+        self,
+        client: valkey_utils.ValkeyClient,
+    ) -> None:
+        self.client = client
+
+    def store(
+        self,
+        company_name: str,
+        nace_classification: str,
+    ) -> None:
+        k = NaceClassificationStore.__create_key(company_name)
+        self.client.client.set(k, nace_classification)
+
+    def get(self,company_name: str) -> str | None:
+        return self.client.client.get(
+            NaceClassificationStore.__create_key(company_name),
+        )
+
+    @staticmethod
+    def __create_key(company: str) -> str:
+        return f'nace_classification:{company}'

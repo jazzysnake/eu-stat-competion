@@ -6,13 +6,14 @@ from dotenv import load_dotenv
 
 import crawler
 import gcs_utils
+import nace_classifier
 import report_downloader
 import site_finder
 import fin_rep_finder
 import fin_data_extractor
 import genai_utils
 import valkey_utils
-from valkey_stores import AnnualReportInfoStore, AnnualReportLinkStore, ConversationStore, CompanySiteStore, ModelActionStore
+from valkey_stores import AnnualReportInfoStore, AnnualReportLinkStore, ConversationStore, CompanySiteStore, ModelActionStore, NaceClassificationStore
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -31,6 +32,7 @@ async def main():
         report_link_store = AnnualReportLinkStore(valkey_client)
         model_action_store = ModelActionStore(valkey_client)
         report_store = AnnualReportInfoStore(valkey_client)
+        nace_store = NaceClassificationStore(valkey_client)
 
         simple_crawler = crawler.Crawler()
 
@@ -64,6 +66,14 @@ async def main():
             report_directory='./pdf_downloads/',
             concurrent_threads=10,
         )
+        nace_class = nace_classifier.NaceClassifier(
+            gen_client=gen_client,
+            report_info_store=report_store,
+            conversation_store=convo_store,
+            nace_classification_store=nace_store,
+            concurrent_threads=10,
+        )
+
         logging.info("Clients initialized successfully.")
 
         #await sf.run()
@@ -76,6 +86,8 @@ async def main():
         #report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
 
         await data_extractor.run()
+
+        await nace_class.run()
 
 
         

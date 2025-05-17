@@ -149,3 +149,18 @@ class AnnualReportInfo(pydantic.BaseModel):
         )
     ]
 
+class Lvl1ClassificationResponse(pydantic.BaseModel):
+    classification: Annotated[
+        str,
+        pydantic.Field(
+            description='The level 1 NACE class the company belongs to (single letter)'
+        )
+    ]
+
+class Lvl2ClassificationResponse(pydantic.BaseModel):
+    classification: Annotated[
+        str,
+        pydantic.Field(
+            description='The level 2 NACE class the company belongs to (2 digit code)',
+        )
+    ]
