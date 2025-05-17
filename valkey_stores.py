@@ -233,7 +233,7 @@ class AnnualReportLinkStore:
         company_name: str,
         gcs_link:str,
     ) -> None:
-        k = self.__create_key(company_name)
+        k = AnnualReportLinkStore.__create_key(company_name)
         rep = self.get(k)
         if rep is None or rep.link is None:
             raise ValueError('Report entry does not exist in the db or is invalid')
@@ -247,7 +247,7 @@ class AnnualReportLinkStore:
         rep = self.get(company_name)
         if rep is None or rep.link is None:
             raise ValueError('Report entry does not exist in the db or is invalid')
-        k = self.__create_key(company_name)
+        k = AnnualReportLinkStore.__create_key(company_name)
         self.client.client.hset(k, 'local_path', local_path)
 
     def get(self, company_name: str) -> AnnualReportLink | AnnualReportLinkWithPaths | None:
@@ -267,11 +267,12 @@ class AnnualReportLinkStore:
                 refyear=report.get('refyear'),
             )
 
+    @staticmethod
     def get_companies(self) -> list[str]:
-        prefix = self.__create_key('')
+        prefix = AnnualReportLinkStore.__create_key('')
         return [
             k.removeprefix(prefix) 
-            for k in self.client.client.keys(self.__create_key('*'))]
+            for k in self.client.client.keys(AnnualReportLinkStore.__create_key('*'))]
 
     def fill_solution_csv(self, path_to_csv: str, separator:str =';') -> None:
         data = pd.read_csv(path_to_csv, sep=separator)
@@ -304,7 +305,7 @@ class AnnualReportInfoStore:
         company_name:str,
         annual_report: AnnualReportInfo,
     ) -> None:
-        k = self.__create_key(company_name)
+        k = AnnualReportInfoStore.__create_key(company_name)
         mapping = annual_report.model_dump(exclude_none=True)
         self.client.client.hset(k, mapping=mapping)
 
@@ -312,7 +313,7 @@ class AnnualReportInfoStore:
         self,
         company_name: str,
     ) -> AnnualReportInfo | None:
-        k = self.__create_key(company_name)
+        k = AnnualReportInfoStore.__create_key(company_name)
         info = self.client.client.hgetall(k)
         if not info:
             return None
@@ -326,7 +327,16 @@ class AnnualReportInfoStore:
             main_activity_description=info.get('main_activity_description'),
         )
 
-    def __create_key(self, company: str) -> str:
+    def get_companies(self) -> list[str]:
+        prefix = AnnualReportInfoStore.__create_key('')
+        return [
+            k.removeprefix(prefix) 
+            for k in self.client.client.keys(AnnualReportInfoStore.__create_key('*'))]
+
+
+
+    @staticmethod
+    def __create_key(company: str) -> str:
         return f'annual_report_info:{company}'
 
 class NaceClassificationStore:
