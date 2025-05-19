@@ -1,3 +1,4 @@
+import logging
 import os
 import glob
 import queue
@@ -91,6 +92,7 @@ class GCSBatchUploader:
         try:
             return client.upload_blob(local_path, destination_name)
         except Exception as e:
+            logging.error(f'Failed to upload blob, cause: {e}')
             return e
 
     def upload_dir(

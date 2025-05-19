@@ -164,3 +164,126 @@ class Lvl2ClassificationResponse(pydantic.BaseModel):
             description='The level 2 NACE class the company belongs to (2 digit code)',
         )
     ]
+
+class StockSearchResult(pydantic.BaseModel):
+    company_name: str
+    symbol: str
+    exchange: str
+
+class CompanyProfileInformation(pydantic.BaseModel):
+    company_name: Annotated[
+        str | None,
+        pydantic.Field(description='Name of the company', default=None),
+    ]
+    website: Annotated[
+        str | None,
+        pydantic.Field(description='Full URL pointing to the website of the company', default=None),
+    ]
+    company_headquarter_country: Annotated[
+        str | None,
+        pydantic.Field(
+        description='The ISO 3166-1 alpha-2 country code where the company is headquartered at (2 uppercase letters).',
+        pattern=r'^[A-Z]{2}$',
+        default=None,
+    )
+    ]
+    company_headquarter_city: Annotated[
+        str | None,
+        pydantic.Field(
+            description='The city where the company is headquartered at',
+            default = None,
+        )
+    ]
+    reporting_currency: Annotated[
+        str | None,
+        pydantic.Field(
+            description='The currency the company reports in (3 letter symbol)',
+            default=None,
+        )
+    ]
+    sic_code: Annotated[
+        str | None,
+        pydantic.Field(
+            description='The Standard Industrial Classification (SIC) code of the company (4 digit code)',
+            default=None,
+    )
+    ]
+    employees: Annotated[
+        int | None,
+        pydantic.Field(
+            description='The number of employees employed by the company',
+            default=None,
+        )
+    ]
+    main_activity_description: Annotated[
+        str | None,
+        pydantic.Field(
+            description='Brief description (5 sentences max) of the main activity performed by the company.',
+            default=None,
+        )
+    ]
+
+class CompanyFinancialInformation(pydantic.BaseModel):
+    fiscal_year: Annotated[
+        int | None,
+        pydantic.Field(
+            description='The fiscal year the data was reported in.',
+            default=None,
+        ),
+    ]
+    revenue: Annotated[
+        int | None,
+        pydantic.Field(
+            description='The revenue of the company for the fiscal year.',
+            default=None,
+        )
+    ]
+    unit_of_revenue: Annotated[
+        Literal['Raw', 'Thousands', 'Millions', 'Billions'] | None,
+        pydantic.Field(
+            description='The unit in which the company reports its revenue.',
+            default=None,
+        )
+    ]
+    currency: Annotated[
+        str | None,
+        pydantic.Field(
+            description='The 3 letter code of the currency in which the company reports revenue',
+            default=None,
+        )
+    ]
+
+
+class CompanyAssetInformation(pydantic.BaseModel):
+    fiscal_year: Annotated[
+        int | None,
+        pydantic.Field(
+            description='The fiscal year the data was reported in.',
+            default=None,
+        ),
+    ]
+    total_assets: Annotated[
+        int | None,
+        pydantic.Field(
+            description='The total assets of the company for the fiscal year.',
+            default=None,
+        )
+    ]
+    unit_of_assets: Annotated[
+        Literal['Raw', 'Thousands', 'Millions', 'Billions'] | None,
+        pydantic.Field(
+            description='The unit in which the company reports its revenue.',
+            default=None,
+        )
+    ]
+    currency: Annotated[
+        str | None,
+        pydantic.Field(
+            description='The 3 letter code of the currency in which the company reports asset values',
+            default=None,
+        )
+    ]
+
+class CompanyMatchesResponse(pydantic.BaseModel):
+    classification_result: bool
+

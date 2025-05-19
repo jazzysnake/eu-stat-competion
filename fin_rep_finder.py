@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import numpy as np
 
 import crawler
 import genai_utils
@@ -15,6 +16,7 @@ class FinRepFinder:
         crawler: crawler.Crawler,
         gen_client: genai_utils.GenaiClient,
         site_store: valkey_stores.CompanySiteStore,
+        company_profile_store: valkey_stores.CompanyProfileStore,
         conversation_store: valkey_stores.ConversationStore,
         model_action_store: valkey_stores.ModelActionStore,
         annual_report_link_store: valkey_stores.AnnualReportLinkStore,
@@ -26,6 +28,7 @@ class FinRepFinder:
         self.crawler = crawler
         self.gen_client = gen_client
         self.site_store = site_store
+        self.profile_store = company_profile_store
         self.report_download_directory = report_download_directory
         self.conversation_store = conversation_store
         self.model_action_store = model_action_store
@@ -40,6 +43,9 @@ class FinRepFinder:
         companies = self.companies
         if companies is None:
             companies = self.site_store.get_companies()
+            companies += self.profile_store.get_companies()
+            companies = np.unique(companies).tolist()
+
         if len(companies) == 0:
             return
         
@@ -75,13 +81,15 @@ class FinRepFinder:
             start_urls.append(current)
 
         # get starting points
+        profile = self.profile_store.get(company)
+        if profile is not None and profile.website is not None:
+            start_urls.append(profile.website)
         site = self.site_store.get(company)
-        if site is None:
-            logging.error(f'Annual report called on company with no site in db {company}')
-        if site.investor_relations_page is not None:
-            start_urls.append(site.investor_relations_page)
-        if site.official_website_link is not None:
-            start_urls.append(site.official_website_link)
+        if site is not None:
+            if site.investor_relations_page is not None:
+                start_urls.append(site.investor_relations_page)
+            if site.official_website_link is not None:
+                start_urls.append(site.official_website_link)
 
         if not start_urls:
             logging.warning(f'Skipping annual report discovery for {company}, no valid starting link found')
@@ -182,7 +190,7 @@ class FinRepFinder:
                 break
             action_with_metadata = self.model_action_store.get(company, url)
             if action_with_metadata is None:
-                raise Exception('Unexpected modification to redis data')
+                raise Exception('Unexpected modification to valkey data')
 
             if history is None:
                 history = [action_with_metadata]

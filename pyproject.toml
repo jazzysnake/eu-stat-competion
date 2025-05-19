@@ -8,6 +8,7 @@ dependencies = [
     "crawl4ai>=0.6.1",
     "google-cloud-storage[aio]>=3.1.0",
     "google-genai>=1.12.1",
+    "numpy>=2.2.5",
     "pydantic>=2.11.3",
     "valkey[libvalkey]>=6.1.0",
     "yfinance>=0.2.56",

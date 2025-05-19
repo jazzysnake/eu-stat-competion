@@ -2,7 +2,7 @@ import json
 import pandas as pd
 import datetime as dt
 
-from models import AnnualReportLink, AnnualReportLinkWithPaths, ModelActionResponse, ModelActionResponseWithMetadata, SiteDiscoveryResponse, AnnualReportInfo
+from models import AnnualReportLink, AnnualReportLinkWithPaths, CompanyAssetInformation, CompanyFinancialInformation, CompanyProfileInformation, ModelActionResponse, ModelActionResponseWithMetadata, SiteDiscoveryResponse, AnnualReportInfo
 
 import valkey_utils
 
@@ -26,7 +26,15 @@ class ConversationStore:
     def store(
         self,
         company_name:str,
-        action: Literal['site_find', 'report_find', 'info_extract', 'nace_classify'],
+        action: Literal[
+            'site_find',
+            'report_find',
+            'info_extract',
+            'nace_classify',
+            'profile_info_extraction',
+            'fiscal_data_extraction',
+            'asset_data_extraction',
+        ],
         conversation_contents: list[types.Content],
     ) -> None:
         """Adds a conversation history to the Valkey store.
@@ -350,15 +358,144 @@ class NaceClassificationStore:
         self,
         company_name: str,
         nace_classification: str,
+        source: Literal['sic_to_nace_sa', 'inference_sa', 'inference_report'],
     ) -> None:
         k = NaceClassificationStore.__create_key(company_name)
         self.client.client.set(k, nace_classification)
+        sk = NaceClassificationStore.__create_source_key(company_name)
+        self.client.client.set(sk, source)
 
     def get(self,company_name: str) -> str | None:
         return self.client.client.get(
             NaceClassificationStore.__create_key(company_name),
         )
+    
+    def get_source(self, company_name: str) -> str | None:
+        return self.client.client.get(NaceClassificationStore.__create_source_key(company_name))
+    
+    @staticmethod
+    def __create_source_key(company: str) -> str:
+        return f'nace_classification_source:{company}'
 
     @staticmethod
     def __create_key(company: str) -> str:
         return f'nace_classification:{company}'
+
+
+class CompanyProfileStore:
+    def __init__(
+        self,
+        client: valkey_utils.ValkeyClient,
+        ) -> None:
+        self.client = client
+
+    def store(
+        self,
+        company_name:str,
+        profile: CompanyProfileInformation,
+    ) -> None:
+        k = CompanyProfileStore.__create_key(company_name)
+        self.client.client.hset(
+            k,
+            mapping=profile.model_dump(exclude_none=True),
+        )
+
+    def get_companies(self) -> list[str]:
+        keys = self.client.client.keys(CompanyProfileStore.__create_key("*"))
+        prefix = CompanyProfileStore.__create_key("")
+        return [k.removeprefix(prefix) for k in keys]
+
+    def get(self, company: str) -> CompanyProfileInformation | None:
+        res = self.client.client.hgetall(CompanyProfileStore.__create_key(company))
+        if not res:
+            return
+        return CompanyProfileInformation(
+            company_name=res['company_name'],
+            website=res['website'],
+            company_headquarter_city=res.get('company_headquarter_city'),
+            company_headquarter_country=res['company_headquarter_country'],
+            reporting_currency=res['reporting_currency'],
+            sic_code=res['sic_code'],
+            employees=res['employees'],
+        )
+
+    @staticmethod
+    def __create_key(company_name: str) -> str:
+        return f'profile_info:{company_name}'
+
+class CompanyFinancialsStore:
+    def __init__(
+        self,
+        client: valkey_utils.ValkeyClient,
+        ) -> None:
+        self.client = client
+
+    def store(
+        self,
+        company_name:str,
+        financials: CompanyFinancialInformation,
+    ) -> None:
+        k = CompanyFinancialsStore.__create_key(company_name)
+        self.client.client.hset(
+            k,
+            mapping=financials.model_dump(exclude_none=True),
+        )
+
+    def get_companies(self) -> list[str]:
+        keys = self.client.client.keys(CompanyFinancialsStore.__create_key("*"))
+        prefix = CompanyFinancialsStore.__create_key("")
+        return [k.removeprefix(prefix) for k in keys]
+
+    def get(self, company: str) -> CompanyFinancialInformation | None:
+        res = self.client.client.hgetall(CompanyFinancialsStore.__create_key(company))
+        if not res:
+            return
+        return CompanyFinancialInformation(
+            fiscal_year=res['fiscal_year'],
+            revenue=res['revenue'],
+            unit_of_revenue=res['unit_of_revenue'],
+            currency=res['currency'],
+        )
+
+    @staticmethod
+    def __create_key(company_name: str) -> str:
+        return f'company_financials:{company_name}'
+
+class CompanyAssetsStore:
+    def __init__(
+        self,
+        client: valkey_utils.ValkeyClient,
+        ) -> None:
+        self.client = client
+
+    def store(
+        self,
+        company_name:str,
+        assets: CompanyAssetInformation,
+    ) -> None:
+        k = CompanyAssetsStore.__create_key(company_name)
+        self.client.client.hset(
+            k,
+            mapping=assets.model_dump(exclude_none=True),
+        )
+
+    def get_companies(self) -> list[str]:
+        keys = self.client.client.keys(CompanyAssetsStore.__create_key("*"))
+        prefix = CompanyAssetsStore.__create_key("")
+        return [k.removeprefix(prefix) for k in keys]
+
+    def get(self, company: str) -> CompanyAssetInformation | None:
+        res = self.client.client.hgetall(CompanyAssetsStore.__create_key(company))
+        if not res:
+            return
+        return CompanyAssetInformation(
+            fiscal_year=res['fiscal_year'],
+            total_assets=res['total_assets'],
+            unit_of_assets=res['unit_of_assets'],
+            currency=res['currency'],
+        )
+
+    @staticmethod
+    def __create_key(company_name: str) -> str:
+        return f'company_assets:{company_name}'
+
