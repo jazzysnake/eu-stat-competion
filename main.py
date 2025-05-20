@@ -5,9 +5,9 @@ import pandas as pd
 from dotenv import load_dotenv
 
 import crawler
-import gcs_utils
 import nace_classifier
 import report_downloader
+import report_uploader
 import site_finder
 import fin_rep_finder
 import fin_data_extractor
@@ -25,7 +25,6 @@ async def main():
         logging.info("Initializing clients...")
         gen_client = genai_utils.GenaiClient.new(model=genai_utils.PRO)
         valkey_client = valkey_utils.ValkeyClient.new()
-        gcs_uploader = gcs_utils.GCSBatchUploader.new(10)
 
         convo_store = ConversationStore(valkey_client)
         site_store = CompanySiteStore(valkey_client)
@@ -40,7 +39,7 @@ async def main():
             gen_client,
             convo_store,
             site_store,
-            companies,
+            list(companies[:5]) + ['SUMITOMO CORPORATION'],
             concurrent_threads=10,
         )
         finfinder = fin_rep_finder.FinRepFinder(
@@ -56,6 +55,11 @@ async def main():
         rep_dler = report_downloader.ReportDownloader(
             report_link_store=report_link_store,
             report_download_directory='./pdf_downloads/',
+            concurrent_threads=10,
+        )
+        rep_uploader = report_uploader.ReportUploader(
+            report_link_store,
+            './pdf_downloads/',
             concurrent_threads=10,
         )
         data_extractor = fin_data_extractor.FinDataExtractor(
@@ -76,21 +80,19 @@ async def main():
 
         logging.info("Clients initialized successfully.")
 
-        #await sf.run()
+        await sf.run()
 
-        #await finfinder.run()
+        await finfinder.run()
 
         await rep_dler.run()
 
-        #gcs_uploader.upload_dir('./pdf_downloads')
         #report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
+
+        rep_uploader.run()
 
         await data_extractor.run()
 
         await nace_class.run()
-
-
-        
 
         logging.info('Closing valkey connection...')
         valkey_client.close()

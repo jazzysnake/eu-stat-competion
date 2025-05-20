@@ -106,14 +106,21 @@ class GCSBatchUploader:
         self,
         local_paths: list[str],
         destination_names: list[str]
-    ) -> list[tuple[str, str]]:
+    ) -> list[tuple[str, str | Exception]]:
         """batch uploads blobs to gcs, returns (local_paths, gcs_link) for successful uploads."""
         threadpool = cf.ThreadPoolExecutor(max_workers=self.num_clients)
         results = []
         for res in threadpool.map(self.__upload_worker, zip(local_paths, destination_names)):
             results.append(res)
-        successful_res = [(local, res) for local, res in zip(local_paths, results) if type(res) == str]
-        return successful_res 
+        final = [
+            (
+                local,
+                f"https://storage.cloud.google.com/{self.bucket_name}/{dest}"
+                if type(res)==str else res
+            )
+            for local, dest, res in zip(local_paths, destination_names, results)
+        ]
+        return final 
             
 
 

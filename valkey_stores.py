@@ -234,7 +234,7 @@ class AnnualReportLinkStore:
         gcs_link:str,
     ) -> None:
         k = AnnualReportLinkStore.__create_key(company_name)
-        rep = self.get(k)
+        rep = self.get(company_name)
         if rep is None or rep.link is None:
             raise ValueError('Report entry does not exist in the db or is invalid')
         self.client.client.hset(k, 'gcs_link', gcs_link)
@@ -267,7 +267,6 @@ class AnnualReportLinkStore:
                 refyear=report.get('refyear'),
             )
 
-    @staticmethod
     def get_companies(self) -> list[str]:
         prefix = AnnualReportLinkStore.__create_key('')
         return [
