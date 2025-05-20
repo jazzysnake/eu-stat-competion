@@ -126,25 +126,18 @@ class ModelActionStore:
         self,
         company_name: str,
         url: str,
-        model_action: ModelActionResponse,
+        model_action: ModelActionResponseWithMetadata,
         mark_done: bool = False,
     ) -> None:
         k = ModelActionStore.__create_key(company_name, url)
-        hitdt = dt.datetime.now()
-        m = ModelActionResponseWithMetadata(
-            **model_action.model_dump(),
-            taken_at_url=url,
-            action_ts_iso=hitdt.isoformat(timespec='milliseconds'),
-        )
-        
         self.valkey_client.client.hset(
             k,
-            mapping=m.model_dump(exclude_none=True),
+            mapping=model_action.model_dump(exclude_none=True),
         )
 
         urlq_k = ModelActionStore.__create_urlqueue_key(company_name)
         if model_action.action == 'visit':
-            self.valkey_client.client.zadd(urlq_k, mapping={url:int(hitdt.timestamp()*1000)})
+            self.valkey_client.client.zadd(urlq_k, mapping={url:model_action.action_ts_ms})
         elif model_action.action == 'back':
             current_url = self.get_current_url(company_name)
             if current_url is not None:
@@ -176,6 +169,21 @@ class ModelActionStore:
             for r in res
             if r is not None
         ]
+
+    def del_all(
+        self,
+        company: str,
+    ) -> None:
+        ks = self.valkey_client.client.keys(ModelActionStore.__create_key(company, '*'))
+        urlk = ModelActionStore.__create_urlqueue_key(company)
+        donek = ModelActionStore.__create_done_key(company)
+        p = self.valkey_client.client.pipeline()
+        for k in ks:
+            p.delete(k)
+        p.zremrangebyrank(urlk, 0, -1)
+        p.delete(donek)
+        p.execute()
+
 
     def get_current_url(self, company:str) -> str | None:
         urlq_k = ModelActionStore.__create_urlqueue_key(company)

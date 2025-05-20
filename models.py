@@ -45,7 +45,7 @@ class ModelActionResponse(pydantic.BaseModel):
 
 class ModelActionResponseWithMetadata(ModelActionResponse):
     taken_at_url: str
-    action_ts_iso: str
+    action_ts_ms: int
 
 
 class AnnualReportLink(pydantic.BaseModel):
@@ -146,6 +146,13 @@ class AnnualReportInfo(pydantic.BaseModel):
         pydantic.Field(
         description='Brief description (5 sentences max) of the main activity performed by the company',
         default=None,
+        )
+    ]
+    reference_year: Annotated[
+        int | None,
+        pydantic.Field(
+            description='The year which the annual report is about. (Calendar year of the closing date of the financial year)',
+            default=None,
         )
     ]
 

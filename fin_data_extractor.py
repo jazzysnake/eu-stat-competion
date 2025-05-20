@@ -68,7 +68,7 @@ class FinDataExtractor:
         prompt = """Extract the relevant financial data from the attached annual report according to specified in the format.
         
         Notes:
-        - Make sure to extract assset values/net turnover in their most expanded integer form. (If the report specifies them in thousands or millions/billions etc, make sure to input the full value)
+        - Make sure to extract asset values/net turnover in their most expanded integer form. (If the report specifies them in thousands or millions/billions etc, make sure to input the full value)
         - Similarly for employee count, extract the expanded integer forms.
         - Only extract information you explicitly found in the attached document, base your answer on facts.
         - Avoid repeating marketing slop when summarizing the main activity. Look at the facts and collect the main industries and sectors the company participates in (if possible order them by priority).

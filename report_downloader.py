@@ -75,7 +75,6 @@ class ReportDownloader:
         fname = '_'.join([company,refyear])
         try:
             is_pdf = await self.pdf_downloader.is_pdf(report_link.link)
-            print('is_pdf', is_pdf)
             fname = fname + '.pdf' if is_pdf else fname + ".html"
             fname = ReportDownloader.__clean_filename(fname)
             fname = os.path.join(self.report_download_directory, fname)

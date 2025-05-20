@@ -1,5 +1,7 @@
+import json
 import asyncio
 import logging
+import datetime as dt
 
 import crawler
 import genai_utils
@@ -8,6 +10,24 @@ import valkey_stores
 from utils import batched
 from models import ModelActionResponse, ModelActionResponseWithMetadata, AnnualReportLink
 from valkey_utils import ConfigurationError
+
+class CrawlAbortError(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+
+class CrawlState:
+    def __init__(
+        self,
+        current_url: str,
+        action_history: list[ModelActionResponseWithMetadata],
+        url_history: list[str],
+
+    ) -> None:
+        self.current_url = current_url
+        self.action_history = action_history
+        self.url_history = url_history
+        
+
 
 class FinRepFinder:
     def __init__(
@@ -31,9 +51,9 @@ class FinRepFinder:
         self.model_action_store = model_action_store
         self.annual_report_link_store = annual_report_link_store
         self.companies = companies
-        self.max_tries_per_company = max_tries_per_company
+        self.max_pages_per_company = max_tries_per_company
         if concurrent_threads < 1:
-            raise ConfigurationError('concurrent_threads must be > 1')
+            raise ConfigurationError('concurrent_threads must be >= 1')
         self.concurrent_threads = concurrent_threads
 
     async def run(self) -> None:
@@ -103,7 +123,7 @@ class FinRepFinder:
         h = f"""Here is your current navigation stack:
         {'->'.join(urlqueue)}
         Here are the actions you have taken so far:\n"""
-        history = sorted(history, key=lambda x: x.action_ts_iso, reverse=False)
+        history = sorted(history, key=lambda x: x.action_ts_ms, reverse=False)
         for a in history:
             action_json = a.model_dump(mode='json', exclude={'taken_at_url'})
             h+=f'URL: {a.taken_at_url}, Action: {action_json}\n'
@@ -130,77 +150,97 @@ class FinRepFinder:
         {history_reminder}
 
         webpage:\n{webpage_markdown}"""
+    
+    async def __handle_model_interaction(
+        self,
+        company: str,
+        page_markdown: str,
+        state: CrawlState,
+    ) -> AnnualReportLink | None:
+        prompt = self.format_crawl_prompt(
+                page_markdown,
+                state.action_history,
+                state.url_history,
+            )
+        conversation = self.gen_client.get_simple_message(prompt)
+
+        self.conversation_store.store(company, 'report_find',conversation)
+        generation_res = await self.gen_client.generate(
+            conversation,
+            thinking_budget=1024,
+            response_schema=ModelActionResponse,
+            model=genai_utils.PRO,
+        )
+        conversation.append(generation_res.candidates[0].content)
+        self.conversation_store.store(company, 'report_find',conversation)
+        response = ModelActionResponse.model_validate_json(generation_res.text)
+
+        state.url_history.append(state.current_url)
+        action = ModelActionResponseWithMetadata(
+                **response.model_dump(),
+                taken_at_url=state.current_url,
+                action_ts_ms=int(dt.datetime.now().timestamp()*1000),
+            )
+        self.model_action_store.store(
+            company,
+            state.current_url,
+            action,
+            (action.action=='done' or action.action =='abort'),
+        )
+        state.action_history.append(
+            action
+        )
+        if response.action == 'done':
+            refyear = int(response.reference_year.split('-')[0]) if response.reference_year is not None else None
+            return AnnualReportLink(link=response.link, refyear=refyear)
+        if action.action == 'abort':
+            raise CrawlAbortError(f"LLM decided to abort crawling")
+        if action.action == 'visit':
+            if action.link_to_visit is None:
+                raise ValueError('Visit action taken with no url to visit')
+            state.current_url = action.link_to_visit
+        if action.action == 'back':
+            if len(state.url_history) < 2:
+                raise ValueError('Back action taken with no previous url')        
+            state.current_url = state.url_history[-2]
+        return None
 
     async def crawl_to_report(self, company:str, start_url: str) -> AnnualReportLink | None:
-        res = await self.crawler.crawl(start_url)
-        if not res[0].success:
-            raise ValueError(f'Failed to crawl provided start_url {start_url}')
-        url = start_url
+        state = CrawlState(
+            start_url,
+            action_history=[],
+            url_history=[],
+        )
         report = None
-        tries = 0
-        history = None
-        urlqueue = self.model_action_store.get_full_url_queue(company)
-        if urlqueue is None:
-            urlqueue = []
-        prev_actions = self.model_action_store.get_all_actions(company)
-        if len(prev_actions) != 0:
-            history = prev_actions
+        page_visits = 0
         retried = False
+        self.model_action_store.del_all(company)
 
-        while tries < self.max_tries_per_company:
-            if res is None:
-                res = await self.crawler.crawl(url)
-                if not res[0].success:
-                    if retried:
-                        logging.error(f'Failed to crawl url: {url}')
-                        break
-                    await asyncio.sleep(1)
-                    retried = True
-                    continue
-
-            prompt = self.format_crawl_prompt(res.markdown, history, urlqueue)
-            content = self.gen_client.get_simple_message(prompt)
-            self.conversation_store.store(company, 'report_find',content)
-            generation_res = await self.gen_client.generate(
-                content,
-                thinking_budget=1024,
-                response_schema=ModelActionResponse,
-                model=genai_utils.PRO,
-            )
-            content.append(generation_res.candidates[0].content)
-            self.conversation_store.store(company, 'report_find',content)
-            response = ModelActionResponse.model_validate_json(generation_res.text)
-            self.model_action_store.store(
-                company,
-                url,
-                response,
-                (response.action=='done' or response.action =='abort'),
-            )
-            if response.action == 'done':
-                refyear = int(response.reference_year.split('-')[0]) if response.reference_year is not None else None
-                report = AnnualReportLink(link=response.link, refyear=refyear)
-                break
-            action_with_metadata = self.model_action_store.get(company, url)
-            if action_with_metadata is None:
-                raise Exception('Unexpected modification to redis data')
-
-            if history is None:
-                history = [action_with_metadata]
-            else:
-                history.append(action_with_metadata)
-
-            if action_with_metadata.action == 'abort':
-                break
-            elif action_with_metadata.action == 'visit':
-                if action_with_metadata.link_to_visit is None:
-                    logging.error('TODO')
+        while page_visits < self.max_pages_per_company:
+            res = await self.crawler.crawl(state.current_url)
+            if not res.success:
+                if retried and page_visits == 0:
                     break
-                url = action_with_metadata.link_to_visit
+                if retried:
+                    markdown = f"Failed to crawl {state.current_url}"
+                retried = True
+                continue
+            markdown = res.markdown
 
-
-            urlqueue = self.model_action_store.get_full_url_queue(company)
+            try:
+                report = await self.__handle_model_interaction(
+                    company,
+                    markdown,
+                    state,
+                )
+                print('state', state.current_url, state.url_history, state.action_history)
+                if report is not None:
+                    return report
+            except CrawlAbortError:
+                logging.info(f'LLM decided to abort crawling to report for company {company}')
+                break
             res = None
-            tries += 1
+            page_visits += 1
             
         return report
 

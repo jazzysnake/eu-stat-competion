@@ -4,6 +4,8 @@ from google import genai
 from google.genai import types
 import pydantic
 
+from valkey_utils import ConfigurationError
+
 FLASH = 'gemini-2.5-flash-preview-04-17'
 PRO = 'gemini-2.5-pro-preview-03-25'
 
@@ -62,7 +64,7 @@ class GenaiClient:
         """
         api_key=os.environ.get('GEMINI_API_TOKEN')
         if api_key is None:
-            raise ValueError('GEMINI_API_TOKEN variable not set, failed to init client')
+            raise ConfigurationError('GEMINI_API_TOKEN variable not set, failed to init client')
         return GenaiClient(api_key=api_key,model=model)
 
     @staticmethod

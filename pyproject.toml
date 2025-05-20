@@ -9,6 +9,7 @@ dependencies = [
     "google-cloud-storage[aio]>=3.1.0",
     "google-genai>=1.12.1",
     "pydantic>=2.11.3",
+    "typer>=0.15.4",
     "valkey[libvalkey]>=6.1.0",
     "yfinance>=0.2.56",
 ]

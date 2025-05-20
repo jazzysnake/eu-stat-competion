@@ -45,8 +45,14 @@ class PDFDownloader:
         effective_client_options.setdefault('timeout', 30.0) # Default timeout
 
         # Initialize clients
-        self.sync_client = httpx.Client(headers=effective_headers, **effective_client_options)
-        self.async_client = httpx.AsyncClient(headers=effective_headers, **effective_client_options)
+        self.sync_client = httpx.Client(
+            headers=effective_headers,
+            **effective_client_options,
+        )
+        self.async_client = httpx.AsyncClient(
+            headers=effective_headers,
+            **effective_client_options,
+        )
         self._chunk_size = 8192 # Internal chunk size for streaming
 
     async def is_pdf(

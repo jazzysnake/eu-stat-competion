@@ -2,7 +2,9 @@ import asyncio
 import logging
 import genai_utils
 import datetime as dt
+import httpx
 
+from google.genai import types
 from utils import batched
 from valkey_stores import ConversationStore, CompanySiteStore
 from models import SiteDiscoveryResponse
@@ -24,6 +26,7 @@ class SiteFinder:
         if concurrent_threads < 1:
             raise ConfigurationError('concurrent_threads must be larger than 1')
         self.concurrent_threads = concurrent_threads
+        self.client = httpx.AsyncClient(follow_redirects=True)
 
     async def run(self) -> None:
         """Runs the site finding workflow for all companies.
@@ -46,8 +49,14 @@ class SiteFinder:
         if site is not None and (site.official_website_link is not None or site.investor_relations_page is not None):
             return
         logging.info(f"Starting site finding for: {company}")
-        res = await self.find_site(company)
-        self.company_site_store.store(company, res)
+        try:
+            res = await self.find_site(company)
+            self.company_site_store.store(company, res)
+        except Exception as e:
+            logging.error(
+                f'Failed to find site for company:{company} , cause: {e}',
+                exc_info=True,
+            )
         logging.info(f"Site finding completed for: {company}")
 
 
@@ -79,10 +88,17 @@ class SiteFinder:
         """
         today = dt.datetime.today()
         prompt = f"""Please find the official website of {company_name}.
-                    Try to find the direct link to the latest financial report of the company.
                     If possible include the link to the investor relations page/subdomain as well.
 
-                    Include full links in your answer. The current date is {today}."""
+                    Include full links in your answer and list the keywords you searched for.
+                    Your answer should be structured like this:
+                    Queries/keywords I used:
+                        - your queries go here
+                        ...
+                    Results:
+                        - the links you found go here
+
+                    The current date is {today}."""
         contents = genai_utils.GenaiClient.get_simple_message(prompt)
         self.conversation_store.store(company_name, 'site_find', contents)
         response = await self.genai_client.generate(
@@ -91,16 +107,77 @@ class SiteFinder:
             google_search=True,
         )
         contents.append(response.candidates[0].content)
+        disco_res = await self.extract_link_from_convo(company_name, contents)
+
+        if disco_res.official_website_link is None and disco_res.investor_relations_page is None:
+            raise Exception('Unexpectedly failed to find any site information')
+        validated = await self.validate_result(disco_res)
+        if validated is not None:
+            return validated
+        # retry
+        contents += self.genai_client.get_simple_message('The links previously retrieved by you were found to not be working anymore. Try again please, now with different queries. Use the date I provided to try to look for more recent results and do not return the same links.')
+
         self.conversation_store.store(company_name, 'site_find', contents)
-        contents = contents + genai_utils.GenaiClient.get_simple_message(
+        response = await self.genai_client.generate(
+            contents=contents,
+            thinking_budget=1024,
+            google_search=True,
+        )
+        contents.append(response.candidates[0].content)
+        self.conversation_store.store(company_name, 'site_find', contents)
+
+        disco_res = await self.extract_link_from_convo(company_name, contents)
+
+        if disco_res.official_website_link is None and disco_res.investor_relations_page is None:
+            raise Exception('Unexpectedly failed to find any site information')
+        validated = await self.validate_result(disco_res)
+        if validated is None:
+            raise Exception(f'Failed to find site for company {company_name}')
+        return validated
+
+    async def extract_link_from_convo(self,company_name, messages: list[types.Content]) -> SiteDiscoveryResponse:
+        messages = messages + genai_utils.GenaiClient.get_simple_message(
             "Provide the answer in a structured manner. Only include links present in your previous message."
         )
         response = await self.genai_client.generate(
             model=genai_utils.FLASH,
-            contents=contents,
+            contents=messages,
             thinking_budget=0,
             response_schema=SiteDiscoveryResponse,
         )
-        contents.append(response.candidates[0].content)
-        self.conversation_store.store(company_name, 'site_find', contents)
+        messages.append(response.candidates[0].content)
+
+        self.conversation_store.store(company_name, 'site_find', messages)
         return SiteDiscoveryResponse.model_validate_json(response.text)
+
+
+
+    async def validate_result(self, site_response: SiteDiscoveryResponse) -> SiteDiscoveryResponse | None:
+        valid_official = False
+        valid_investors = False
+        try:
+            if site_response.official_website_link is not None:
+                valid_official = await self.validate_link(site_response.official_website_link)
+            if site_response.investor_relations_page is not None:
+                valid_investors = await self.validate_link(site_response.investor_relations_page)
+            if not valid_official and not valid_investors:
+                return None
+            if not valid_official:
+                site_response.official_website_link = None
+            if not valid_investors:
+                site_response.investor_relations_page = None
+        except Exception as e:
+            logging.error(f'Unexpected Error occured, returning site discovery response unvalidated, error: {e}', exc_info=True)
+        return site_response
+        
+
+    
+    async def validate_link(self, link: str) -> bool:
+        try:
+            r = await self.client.get(link)
+            r.raise_for_status()
+            return True
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ConnectTimeout):
+            return False
+        
+
