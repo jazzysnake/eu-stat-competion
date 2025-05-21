@@ -5,11 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiofiles>=24.1.0",
     "crawl4ai>=0.6.1",
-    "google-cloud-storage[aio]>=3.1.0",
+    "google-cloud-storage>=3.1.0",
     "google-genai>=1.12.1",
+    "httpx>=0.28.1",
+    "numpy>=2.2.5",
+    "pandas>=2.2.3",
     "pydantic>=2.11.3",
+    "python-dotenv>=1.1.0",
     "typer>=0.15.4",
     "valkey[libvalkey]>=6.1.0",
-    "yfinance>=0.2.56",
 ]

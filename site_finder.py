@@ -1,8 +1,8 @@
 import asyncio
 import logging
+import crawler
 import genai_utils
 import datetime as dt
-import httpx
 
 from google.genai import types
 from utils import batched
@@ -17,6 +17,7 @@ class SiteFinder:
         conversation_store: ConversationStore,
         company_site_store: CompanySiteStore,
         company_names: list[str],
+        crawler: crawler.Crawler,
         concurrent_threads: int = 1,
     ) -> None:
         self.genai_client = gen_client
@@ -26,7 +27,7 @@ class SiteFinder:
         if concurrent_threads < 1:
             raise ConfigurationError('concurrent_threads must be larger than 1')
         self.concurrent_threads = concurrent_threads
-        self.client = httpx.AsyncClient(follow_redirects=True)
+        self.crawler = crawler
 
     async def run(self) -> None:
         """Runs the site finding workflow for all companies.
@@ -132,7 +133,7 @@ class SiteFinder:
             raise Exception('Unexpectedly failed to find any site information')
         validated = await self.validate_result(disco_res)
         if validated is None:
-            raise Exception(f'Failed to find site for company {company_name}')
+            raise Exception(f'All site results found for {company_name} are invalid')
         return validated
 
     async def extract_link_from_convo(self,company_name, messages: list[types.Content]) -> SiteDiscoveryResponse:
@@ -174,10 +175,9 @@ class SiteFinder:
     
     async def validate_link(self, link: str) -> bool:
         try:
-            r = await self.client.get(link)
-            r.raise_for_status()
-            return True
-        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ConnectTimeout):
+            r = await self.crawler.crawl(link)
+            return r.success
+        except Exception:
             return False
         
 

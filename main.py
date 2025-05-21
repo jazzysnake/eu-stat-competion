@@ -85,11 +85,7 @@ async def initialize_services(
         )
 
     all_csv_companies = df.drop_duplicates(subset=["ID"])["NAME"]
-
-    # Specific company list for SiteFinder as per original logic
-    sf_company_list = list(all_csv_companies[:5])
-    if "SUMITOMO CORPORATION" not in sf_company_list:
-        sf_company_list.append("SUMITOMO CORPORATION")
+    sf_company_list = list(all_csv_companies)
     
     pdf_download_dir.mkdir(parents=True, exist_ok=True)
     pdf_dir_str = str(pdf_download_dir)
@@ -115,6 +111,7 @@ async def initialize_services(
         convo_store,
         site_store,
         sf_company_list,
+        simple_crawler,
         concurrent_threads=concurrency,
     )
     finfinder = fin_rep_finder.FinRepFinder(

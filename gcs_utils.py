@@ -45,8 +45,6 @@ class GCSClient:
             return blob.path
         except FileNotFoundError as e:
             raise Exception(f'Unexpectedly failed to load file from local path {local_path}') from e
-        except Exception as e:
-            raise Exception(f'Unexpected Error during file upload') from e
 
 class GCSBatchUploader:
     def __init__(

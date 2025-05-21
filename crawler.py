@@ -12,7 +12,7 @@ class Crawler:
             headless=True,
             text_mode=False,
         )
-        self.run_cfg = CrawlerRunConfig(page_timeout=request_timeout_sec*1000)
+        self.run_cfg = CrawlerRunConfig(page_timeout=request_timeout_sec*1000, magic=True)
         self.crawler = AsyncWebCrawler(config=self.conf)
 
     async def crawl(self, url:str):

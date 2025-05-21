@@ -89,10 +89,6 @@ class FinRepFinder:
             return AnnualReportLink(link=done.link, refyear=refyear)
 
         start_urls = []
-        # continue previous crawl
-        current = self.model_action_store.get_current_url(company)
-        if current is not None:
-            start_urls.append(current)
 
         # get starting points
         site = self.site_store.get(company)

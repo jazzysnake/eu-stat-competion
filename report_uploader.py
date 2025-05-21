@@ -34,6 +34,9 @@ class ReportUploader:
             if not isinstance(report, AnnualReportLinkWithPaths):
                 logging.warning(f'Skipping upload of report for company {company}, not available locally')
                 continue
+            if report.gcs_link is not None:
+                logging.warning(f'Skipping upload for company {company} as it has a gcs link')
+                continue
             if report.local_path is None:
                 logging.error(f'Local path is unexpectedly missing from database for company {company}, skipping upload')
                 continue
@@ -44,6 +47,7 @@ class ReportUploader:
                     )
             )
 
+        logging.info(f'Starting upload of {len(report_info)} documents')
         results = self.uploader.upload_blobs(
             [r[1] for r in report_info],
             [r[2] for r in report_info],
