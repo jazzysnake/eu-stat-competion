@@ -9,12 +9,23 @@ from google.oauth2 import service_account
 from valkey_utils import ConfigurationError
 
 class GCSClient:
+    """A client for interacting with Google Cloud Storage (GCS)."""
     def __init__(
         self,
         project_id: str,
         keyfile_path: str,
         bucket_name: str,
     ) -> None:
+        """Initializes the GCSClient.
+
+        Args:
+            project_id: Google Cloud project ID.
+            keyfile_path: Path to the GCS service account keyfile.
+            bucket_name: Name of the GCS bucket to interact with.
+
+        Raises:
+            ConfigurationError: If the keyfile does not exist at the specified path.
+        """
         if not os.path.exists(keyfile_path):
             raise ConfigurationError(f'Credentials dont exist at specified path {keyfile_path}')
 
@@ -25,6 +36,18 @@ class GCSClient:
 
     @staticmethod
     def new() -> 'GCSClient':
+        """Creates a new GCSClient instance using environment variables for configuration.
+
+        Reads 'GOOGLE_PROJECT_ID', 'GOOGLE_CREDENTIALS_PATH', and
+        'GOOGLE_STORAGE_BUCKET_NAME' environment variables.
+
+        Returns:
+            GCSClient: A configured GCSClient instance.
+
+        Raises:
+            ConfigurationError: If required environment variables are not set,
+                                or if the keyfile specified is invalid.
+        """
         try:
             project_id = os.environ['GOOGLE_PROJECT_ID']
             keyfile_path = os.environ['GOOGLE_CREDENTIALS_PATH']
@@ -36,6 +59,19 @@ class GCSClient:
             raise e
     
     def upload_blob(self, local_path: str, destination_name: str) -> str:
+        """Uploads a local file to the GCS bucket.
+
+        Args:
+            local_path: Path to the local file to upload.
+            destination_name: The name for the blob in the GCS bucket.
+
+        Returns:
+            str: The GCS path of the uploaded blob (e.g., "gs://bucket_name/destination_name").
+
+        Raises:
+            ValueError: If the local file cannot be located at `local_path`.
+            Exception: If the upload fails for other reasons (e.g., GCS API errors).
+        """
         if not os.path.exists(local_path):
             raise ValueError(f'Cant locate file at {local_path}')
         try:
@@ -47,6 +83,7 @@ class GCSClient:
             raise Exception(f'Unexpectedly failed to load file from local path {local_path}') from e
 
 class GCSBatchUploader:
+    """Handles batch uploading of files to Google Cloud Storage using multiple threads."""
     def __init__(
         self,
         project_id: str,
@@ -54,6 +91,18 @@ class GCSBatchUploader:
         bucket_name: str,
         num_clients: int,
     ) -> None:
+        """Initializes the GCSBatchUploader.
+
+        Args:
+            project_id: Google Cloud project ID.
+            keyfile_path: Path to the GCS service account keyfile.
+            bucket_name: Name of the GCS bucket.
+            num_clients: Number of GCSClient instances (and threads) to use
+                         for parallel uploads.
+
+        Raises:
+            ConfigurationError: If the keyfile does not exist at the specified path.
+        """
         if not os.path.exists(keyfile_path):
             raise ConfigurationError(f'Credentials dont exist at specified path {keyfile_path}')
 
@@ -66,6 +115,20 @@ class GCSBatchUploader:
 
     @staticmethod
     def new(num_clients:int=4) -> 'GCSBatchUploader':
+        """
+        Creates a new batch uploader by reading GCS configuration from environment variables.
+
+        Args:
+            num_clients: Number of GCSClient instances (and threads) to use for
+                         parallel uploads. Defaults to 4.
+
+        Returns:
+            GCSBatchUploader: A configured GCSBatchUploader instance.
+
+        Raises:
+            ConfigurationError: If required GCS environment variables are not set
+                                or if the keyfile is invalid.
+        """
         try:
             project_id = os.environ['GOOGLE_PROJECT_ID']
             keyfile_path = os.environ['GOOGLE_CREDENTIALS_PATH']
@@ -77,6 +140,20 @@ class GCSBatchUploader:
             raise e
 
     def __upload_worker(self, task: tuple[str,str]) -> str | Exception:
+        """Worker function for uploading a single file in a separate thread.
+
+        Each thread initializes its own GCSClient instance from thread-local storage
+        if one doesn't already exist for that thread.
+
+        Args:
+            task: A tuple containing (local_path, destination_name).
+                  `local_path` is the path to the file on the local system.
+                  `destination_name` is the desired name of the file in GCS.
+
+        Returns:
+            str | Exception: The GCS path (gs://bucket/object) of the uploaded blob on success,
+                             or an Exception object on failure.
+        """
         local_path, destination_name = task
         client: GCSClient | None = getattr(self.__thread_local_storage, 'gcs_client', None)
         if client is None:
@@ -95,6 +172,14 @@ class GCSBatchUploader:
         self,
         directory: str,
     ) -> None:
+        """
+        Uploads all files from a specified local directory to GCS.
+
+        File names in GCS will match their base names in the local directory.
+
+        Args:
+            directory: The path to the local directory containing files to upload.
+        """
         files = glob.glob(os.path.join(directory, '*'))
         upload_names = [os.path.basename(f) for f in files]
         self.upload_blobs(files, upload_names)
@@ -105,7 +190,20 @@ class GCSBatchUploader:
         local_paths: list[str],
         destination_names: list[str]
     ) -> list[tuple[str, str | Exception]]:
-        """batch uploads blobs to gcs, returns (local_paths, gcs_link) for successful uploads."""
+        """
+        Batch uploads multiple files to GCS using a thread pool.
+
+        Args:
+            local_paths: A list of local file paths to upload.
+            destination_names: A list of corresponding destination blob names in GCS.
+                               This list must be the same length as `local_paths`.
+
+        Returns:
+            list[tuple[str, str | Exception]]: A list of tuples. Each tuple contains:
+                - The original local_path (str).
+                - The full GCS HTTP URL (str) of the uploaded file on success,
+                  or the Exception object encountered during upload on failure.
+        """
         threadpool = cf.ThreadPoolExecutor(max_workers=self.num_clients)
         results = []
         for res in threadpool.map(self.__upload_worker, zip(local_paths, destination_names)):

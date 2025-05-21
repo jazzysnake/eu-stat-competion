@@ -2,14 +2,17 @@ import os
 import valkey
 
 class ConfigurationError(ValueError):
+    """Custom exception for configuration-related errors, typically from environment variables."""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 class ConnectionError(Exception):
+    """Custom exception for Valkey connection-related errors."""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 class ValkeyClient:
+    """A client for interacting with a Valkey (or Redis) server."""
     def __init__(
         self,
         host: str,

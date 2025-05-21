@@ -7,22 +7,39 @@ from models import AnnualReportLinkWithPaths
 from gcs_utils import GCSBatchUploader
 
 class UploadError(Exception):
+    """Custom exception for errors during report uploading."""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 class ReportUploader:
+    """Handles uploading of annual financial reports to Google Cloud Storage."""
     def __init__(
         self,
         report_link_store: valkey_stores.AnnualReportLinkStore,
         report_download_directory: str,
         concurrent_threads: int = 1,
     ) -> None:
+        """Initializes the ReportUploader.
+
+        Args:
+            report_link_store: Store for annual report links, used to get report metadata.
+            report_download_directory: Directory where reports are downloaded locally.
+            concurrent_threads: Number of concurrent threads for uploading files to GCS.
+        """
         self.report_link_store = report_link_store
         self.report_download_directory = report_download_directory
         self.uploader = GCSBatchUploader.new(num_clients=concurrent_threads)
         self.concurrent_threads = concurrent_threads
 
     def run(self) -> None:
+        """Uploads downloaded annual reports to Google Cloud Storage.
+
+        It iterates through companies in the report_link_store.
+        For each company, it checks if a report is available locally and
+        has not already been uploaded (i.e., no GCS link exists).
+        If conditions are met, the report is uploaded, and the GCS link
+        is stored back in the report_link_store.
+        """
         logging.info('Started report uploads')
         companies = self.report_link_store.get_companies()
         reports = []

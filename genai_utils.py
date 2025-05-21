@@ -10,10 +10,12 @@ FLASH = 'gemini-2.5-flash-preview-04-17'
 PRO = 'gemini-2.5-pro-preview-03-25'
 
 class GenerationError(Exception):
+    """Custom exception for errors during AI content generation."""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 class GenaiClient:
+    """Client for interacting with Google's Generative AI models (e.g., Gemini)."""
     HARM_CATEGORIES = (
         types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
         types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,

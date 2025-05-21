@@ -3,6 +3,10 @@ from typing import Annotated, Literal
 
 
 class ModelActionResponse(pydantic.BaseModel):
+    """
+    Represents an action decision made by the LLM during web crawling
+    to find financial reports.
+    """
     action: Annotated[
         Literal['done', 'visit', 'back', 'abort'],
         pydantic.Field(description='The chosen action to perform'),
@@ -44,11 +48,18 @@ class ModelActionResponse(pydantic.BaseModel):
     ]
 
 class ModelActionResponseWithMetadata(ModelActionResponse):
+    """
+    Extends ModelActionResponse with metadata about when and where (URL)
+    the action was decided by the LLM.
+    """
     taken_at_url: str
     action_ts_ms: int
 
 
 class AnnualReportLink(pydantic.BaseModel):
+    """
+    Stores the direct link to an annual financial report and its reference year.
+    """
     link: Annotated[
         str | None,
         pydantic.Field(
@@ -64,6 +75,10 @@ class AnnualReportLink(pydantic.BaseModel):
         )
     ]
 class AnnualReportLinkWithPaths(AnnualReportLink):
+    """
+    Extends AnnualReportLink with local filesystem path and GCS (Google Cloud Storage)
+    link for the downloaded report file.
+    """
     local_path: Annotated[
         str | None,
         pydantic.Field(
@@ -99,6 +114,9 @@ class SiteDiscoveryResponse(pydantic.BaseModel):
 
 
 class AnnualReportInfo(pydantic.BaseModel):
+    """
+    Stores extracted financial and general information from an annual report.
+    """
     country_code: Annotated[
         str | None,
         pydantic.Field(
@@ -157,6 +175,7 @@ class AnnualReportInfo(pydantic.BaseModel):
     ]
 
 class Lvl1ClassificationResponse(pydantic.BaseModel):
+    """Represents a Level 1 NACE classification result from the LLM."""
     classification: Annotated[
         str,
         pydantic.Field(
@@ -165,6 +184,7 @@ class Lvl1ClassificationResponse(pydantic.BaseModel):
     ]
 
 class Lvl2ClassificationResponse(pydantic.BaseModel):
+    """Represents a Level 2 NACE classification result from the LLM."""
     classification: Annotated[
         str,
         pydantic.Field(

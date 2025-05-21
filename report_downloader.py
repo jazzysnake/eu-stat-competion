@@ -11,16 +11,25 @@ from crawler import HTMLDownloader
 from pdf_downloader import PDFDownloader
 
 class DownloadError(Exception):
+    """Custom exception for errors encountered during report downloading."""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 class ReportDownloader:
+    """Handles downloading of annual financial reports (PDF or HTML)."""
     def __init__(
         self,
         report_link_store: valkey_stores.AnnualReportLinkStore,
         report_download_directory: str,
         concurrent_threads: int = 1,
     ) -> None:
+        """Initializes the ReportDownloader.
+
+        Args:
+            report_link_store: Store for annual report links, used to get URLs.
+            report_download_directory: Directory to save downloaded reports.
+            concurrent_threads: Number of concurrent threads for downloading files.
+        """
         self.report_link_store = report_link_store
         self.report_download_directory = report_download_directory
         self.concurrent_threads = concurrent_threads
@@ -28,6 +37,11 @@ class ReportDownloader:
         self.html_downloader = HTMLDownloader()
 
     async def run(self) -> None:
+        """Downloads annual reports for companies in batches.
+
+        Retrieves companies from the report_link_store and processes them
+        concurrently based on the configured number of threads.
+        """
         companies = self.report_link_store.get_companies()
         if len(companies) == 0:
             return
@@ -40,6 +54,15 @@ class ReportDownloader:
         self,
         company: str,
     ) -> None:
+        """Processes a single company to download its annual report.
+
+        Skips downloading if the report link is missing, or if the report
+        (identified by local_path) has already been downloaded.
+        Stores the local path of the downloaded file back into the report_link_store.
+
+        Args:
+            company: The name of the company to process.
+        """
         try:
             reportlink = self.report_link_store.get(company)
             if reportlink is None:
@@ -62,6 +85,16 @@ class ReportDownloader:
 
     @staticmethod
     def __clean_filename(name: str) -> str:
+        """Cleans a filename by replacing spaces and removing invalid characters.
+
+        Replaces spaces with underscores and removes backslashes and forward slashes.
+
+        Args:
+            name: The original filename string.
+
+        Returns:
+            str: The cleaned filename string.
+        """
         return name.replace(' ', '_').replace('\\', '').replace('/', '')
         
     async def download_annual_report(
@@ -69,6 +102,25 @@ class ReportDownloader:
         report_link: AnnualReportLink,
         company: str,
     ) -> str:
+        """Downloads an annual report, determining if it's PDF or HTML.
+
+        Constructs a filename based on company name and reference year.
+        If the target is a PDF and an initial download attempt results in a 403 error,
+        it retries with a spoofed browser user agent.
+
+        Args:
+            report_link: The AnnualReportLink object containing the URL and reference year.
+            company: The name of the company (for logging and filename generation).
+
+        Returns:
+            str: The local path to the downloaded file.
+
+        Raises:
+            ValueError: If `report_link.link` is None.
+            DownloadError: If downloading fails after all attempts or for other reasons.
+                           This can be due to HTTP errors, network issues, or other exceptions
+                           from the underlying downloaders.
+        """
         if report_link.link is None:
             raise ValueError('Link must not be None')
         refyear = '' if report_link.refyear is None else str(report_link.refyear)

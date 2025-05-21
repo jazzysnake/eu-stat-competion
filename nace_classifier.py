@@ -9,10 +9,12 @@ import valkey_stores
 from utils import batched
 
 class ClassificationError(Exception):
+    """Custom exception for errors during NACE classification."""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 class NaceClassifier:
+    """Classifies companies with NACE codes based on their activity descriptions."""
     def __init__(
         self,
         gen_client: genai_utils.GenaiClient,
@@ -23,6 +25,17 @@ class NaceClassifier:
         nace_lvl1_json_path: str = './data/nace/nace2lvl1.json',
         nace_lvl2_json_path: str = './data/nace/nace2lvl2.json',
     ) -> None:
+        """Initializes the NaceClassifier.
+
+        Args:
+            gen_client: Client for generative AI model interaction.
+            report_info_store: Store for annual report information.
+            conversation_store: Store for conversation history.
+            nace_classification_store: Store for NACE classification results.
+            concurrent_threads: Number of concurrent threads for processing.
+            nace_lvl1_json_path: Path to the JSON file containing NACE level 1 codes.
+            nace_lvl2_json_path: Path to the JSON file containing NACE level 2 codes.
+        """
         self.gen_client = gen_client
         self.report_info_store = report_info_store
         self.conversation_store = conversation_store
@@ -35,6 +48,11 @@ class NaceClassifier:
 
 
     async def run(self) -> None:
+        """Processes companies in batches to classify their NACE codes.
+
+        Retrieves companies from the report_info_store and processes them
+        concurrently based on the configured number of threads.
+        """
         companies = self.report_info_store.get_companies()
         if len(companies) == 0:
             return
@@ -47,6 +65,14 @@ class NaceClassifier:
         self,
         company: str,
     ) -> None:
+        """Processes a single company to classify its NACE code.
+
+        Skips classification if it already exists in the store, or if
+        the main activity description is missing from the report information.
+
+        Args:
+            company: The name of the company to process.
+        """
         existing_classification = self.classification_store.get(company)
         if existing_classification is not None:
             return
@@ -68,6 +94,26 @@ class NaceClassifier:
             logging.error(f'Failed to classify nace code of company {company}, cause:{e}',exc_info=True)
 
     async def classify_company(self, company: str, activity_description: str) -> str:
+        """Classifies a company's NACE code using an AI model.
+
+        The classification is a two-step process:
+        1. Determine the Level 1 NACE code.
+        2. Determine the Level 2 NACE code based on the Level 1 result.
+
+        If Level 2 classification fails, it falls back to using only Level 1.
+
+        Args:
+            company: The name of the company.
+            activity_description: Description of the company's main activity.
+
+        Returns:
+            The combined NACE code (e.g., 'A01') or just Level 1 (e.g., 'A')
+            if Level 2 classification fails.
+
+        Raises:
+            ClassificationError: If the model fails to classify the company at Level 1.
+            genai_utils.GenerationError: If AI model generation fails at any step.
+        """
         prompt = f"""Determine the level 1 nace code based on the below description of the company:
             possible nace codes and their descriptions:
                 {json.dumps(self.nace_lvl1,indent='  ')}

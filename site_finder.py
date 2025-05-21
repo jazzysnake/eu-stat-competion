@@ -11,6 +11,9 @@ from models import SiteDiscoveryResponse
 from valkey_utils import ConfigurationError
 
 class SiteFinder:
+    """
+    Finds official company websites and investor relations pages using a generative AI model.
+    """
     def __init__(
         self,
         gen_client: genai_utils.GenaiClient,
@@ -20,6 +23,20 @@ class SiteFinder:
         crawler: crawler.Crawler,
         concurrent_threads: int = 1,
     ) -> None:
+        """Initializes the SiteFinder.
+
+        Args:
+            gen_client: Client for generative AI model interaction.
+            conversation_store: Store for conversation history with the AI.
+            company_site_store: Store for discovered company website information.
+            company_names: A list of company names to find sites for.
+            crawler: An instance of the web crawler (crawler.Crawler) for validating links.
+            concurrent_threads: Number of concurrent threads for processing companies.
+                                Must be >= 1.
+
+        Raises:
+            ConfigurationError: If `concurrent_threads` is less than 1.
+        """
         self.genai_client = gen_client
         self.conversation_store = conversation_store
         self.company_site_store = company_site_store
@@ -30,11 +47,12 @@ class SiteFinder:
         self.crawler = crawler
 
     async def run(self) -> None:
-        """Runs the site finding workflow for all companies.
+        """Runs the site finding workflow for all configured company names.
         
-        An AI model is prompted to find the official site for each company.
-        The conversation with the AI as well as the attained result is saved
-        in the configured stores.
+        An AI model is prompted to find the official site and investor relations page
+        for each company. The conversation with the AI, as well as the validated
+        result (SiteDiscoveryResponse), is saved in the configured Valkey stores.
+        Companies are processed in batches concurrently.
         """
         logging.info(f"Site finding started")
         for company_batch in batched(self.company_names, self.concurrent_threads):
@@ -46,6 +64,15 @@ class SiteFinder:
         self,
         company: str,
     ) -> None:
+        """Processes a single company to find its website information.
+
+        Skips processing if valid site information (either official website or
+        investor relations page) already exists in the `company_site_store`.
+        Otherwise, invokes `find_site` and stores the result.
+
+        Args:
+            company: The name of the company to process.
+        """
         site = self.company_site_store.get(company)
         if site is not None and (site.official_website_link is not None or site.investor_relations_page is not None):
             return
@@ -137,6 +164,24 @@ class SiteFinder:
         return validated
 
     async def extract_link_from_convo(self,company_name, messages: list[types.Content]) -> SiteDiscoveryResponse:
+        """Extracts structured site information from a conversation history using the LLM.
+
+        Prompts the LLM to summarize its findings from the prior conversation
+        into the required JSON format defined by `SiteDiscoveryResponse`.
+
+        Args:
+            company_name: The name of the company (for storing the conversation).
+            messages: The list of `google.genai.types.Content` representing the
+                      conversation history up to this point.
+
+        Returns:
+            SiteDiscoveryResponse: The parsed site discovery information.
+
+        Raises:
+            pydantic.ValidationError: If the AI's JSON response does not conform to
+                                      the SiteDiscoveryResponse schema.
+            genai_utils.GenerationError: If the AI fails to generate this structured response.
+        """
         messages = messages + genai_utils.GenaiClient.get_simple_message(
             "Provide the answer in a structured manner. Only include links present in your previous message."
         )
@@ -154,6 +199,19 @@ class SiteFinder:
 
 
     async def validate_result(self, site_response: SiteDiscoveryResponse) -> SiteDiscoveryResponse | None:
+        """Validates the URLs in a SiteDiscoveryResponse by attempting to crawl them.
+
+        If a URL cannot be successfully crawled (e.g., results in an error or
+        timeout), it is removed (set to None) from the response object.
+
+        Args:
+            site_response: The `SiteDiscoveryResponse` object with URLs to validate.
+
+        Returns:
+            SiteDiscoveryResponse | None: The updated `SiteDiscoveryResponse` with invalid
+                                          links removed. Returns None if both links become
+                                          invalid after validation.
+        """
         valid_official = False
         valid_investors = False
         try:
@@ -174,6 +232,15 @@ class SiteFinder:
 
     
     async def validate_link(self, link: str) -> bool:
+        """Validates a single URL by attempting to crawl it.
+
+        Args:
+            link: The URL string to validate.
+
+        Returns:
+            bool: True if the link is accessible and the crawl is successful,
+                  False otherwise (e.g., HTTP error, timeout, invalid content).
+        """
         try:
             r = await self.crawler.crawl(link)
             return r.success
