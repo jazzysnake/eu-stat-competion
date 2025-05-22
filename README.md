@@ -47,7 +47,7 @@ After installing the dependencies, run the crawl4ai setup command. This will hel
 crawl4ai-setup
 ```
 
-For more detailed instructions on crawl4ai installation and setup, please refer to the official Crawl4ai documentation.
+For more detailed instructions on crawl4ai installation and setup, please refer to the official [Crawl4ai documentation](https://docs.crawl4ai.com/core/installation/)).
 
 ## Configuration
 
