@@ -1,6 +1,5 @@
 import json
 import pandas as pd
-import datetime as dt
 
 from models import AnnualReportLink, AnnualReportLinkWithPaths, ModelActionResponseWithMetadata, SiteDiscoveryResponse, AnnualReportInfo
 
@@ -562,6 +561,7 @@ class AnnualReportInfoStore:
             net_turnover=info.get('net_turnover'),
             currency_code_turnover=info.get('currency_code_turnover'),
             main_activity_description=info.get('main_activity_description'),
+            reference_year=info.get('reference_year'),
         )
 
     def get_companies(self) -> list[str]:

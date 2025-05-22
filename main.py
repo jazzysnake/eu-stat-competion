@@ -13,6 +13,7 @@ import report_uploader
 import site_finder
 import fin_rep_finder
 import fin_data_extractor
+import data_exporter
 import genai_utils
 import valkey_utils
 from valkey_stores import (
@@ -37,14 +38,18 @@ app = typer.Typer(
 # --- Default values for common options ---
 DEFAULT_CONCURRENCY = 10
 DEFAULT_ENV_FILE = Path(".env")
-DEFAULT_INPUT_CSV = Path("disco_starting_kit/discovery.csv")
+DEFAULT_DISCO_CSV = Path("disco_starting_kit/discovery.csv")
+DEFAULT_EXTR_CSV = Path("extra_starting_kit/extraction.csv")
 DEFAULT_PDF_DIR = Path("./pdf_downloads/")
+DEFAULT_OUTPUT_DIR= Path('.')
 
 
 # --- Helper function for initialization ---
 async def initialize_services(
     concurrency: int,
-    input_csv_path: Path,
+    discovery_csv_path: Path,
+    extraction_csv_path: Path | None,
+    output_dir: Path | None,
     pdf_download_dir: Path,
     env_file: Path | None,
 ):
@@ -69,18 +74,18 @@ async def initialize_services(
             logging.info("Loaded environment variables from system or no .env file found.")
 
 
-    if not input_csv_path.exists():
-        logging.error(f"Input CSV file not found: {input_csv_path}")
+    if not discovery_csv_path.exists():
+        logging.error(f"Input CSV file not found: {discovery_csv_path}")
         raise typer.BadParameter(
-            f"Input CSV file not found: {input_csv_path}", param_hint="--input-csv"
+            f"Input CSV file not found: {discovery_csv_path}", param_hint="--input-csv"
         )
 
     try:
-        df = pd.read_csv(input_csv_path, sep=";")
+        df = pd.read_csv(discovery_csv_path, sep=";")
     except Exception as e:
-        logging.error(f"Failed to read or parse CSV file {input_csv_path}: {e}")
+        logging.error(f"Failed to read or parse CSV file {discovery_csv_path}: {e}")
         raise typer.BadParameter(
-            f"Failed to read or parse CSV file {input_csv_path}: {e}",
+            f"Failed to read or parse CSV file {discovery_csv_path}: {e}",
             param_hint="--input-csv",
         )
 
@@ -149,8 +154,7 @@ async def initialize_services(
         nace_classification_store=nace_store,
         concurrent_threads=concurrency,
     )
-    logging.info("Clients initialized successfully.")
-    return {
+    services = {
         "gen_client": gen_client,
         "valkey_client": valkey_client,
         "simple_crawler": simple_crawler,
@@ -160,8 +164,20 @@ async def initialize_services(
         "rep_uploader": rep_uploader,
         "data_extractor": data_extractor,
         "nace_class": nace_class,
-        "report_link_store": report_link_store, # For potential use by other utilities
     }
+    
+    if extraction_csv_path is not None and output_dir is not None:
+        services['data_exporter'] = data_exporter.DataExporter(
+            site_store=site_store,
+            report_link_store=report_link_store,
+            report_info_store=report_store,
+            nace_store=nace_store,
+            output_dir=output_dir.as_posix(),
+            discovery_csv_path=discovery_csv_path.as_posix(),
+            extraction_csv_path=extraction_csv_path.as_posix(),
+        )
+    logging.info("Clients initialized successfully.")
+    return services
 
 async def cleanup_services(services: dict | None):
     """Cleans up resources like database connections and crawlers."""
@@ -191,10 +207,22 @@ ConcurrencyOption = Annotated[
         "--concurrency", "-c", help="Number of concurrent threads for the operation."
     ),
 ]
-InputCsvOption = Annotated[
+DiscoCsvOption = Annotated[
     Path,
     typer.Option(
-        "--input-csv", help="Path to the input CSV file with company data."
+        "--disco-csv", help="Path to the input CSV (discovery.csv) file with company data."
+    ),
+]
+ExtCsvOption = Annotated[
+    Path,
+    typer.Option(
+        "--ext-csv", help="Path to the input CSV (extraction.csv) file with company data."
+    ),
+]
+OutputDirectory = Annotated[
+    Path,
+    typer.Option(
+        "--output-dir", help="Path to the directory where the solution csvs will be output"
     ),
 ]
 PdfDirOption = Annotated[
@@ -204,13 +232,14 @@ PdfDirOption = Annotated[
     ),
 ]
 
+
 # --- Typer Commands ---
 
 @app.command()
 def find_sites(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
     env_file: EnvFileOption = None, # Default handled by initialize_services if None
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV,
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV,
     # pdf_dir is not directly used by site_finder but initialize_services expects it.
     # We could make initialize_services more granular or pass a dummy value if a step doesn't need it.
     # For consistency, we'll provide it.
@@ -220,7 +249,14 @@ def find_sites(
     async def _run():
         services = None
         try:
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                None,
+                None,
+                pdf_dir,
+                env_file,
+            )
             logging.info("Starting site finder...")
             await services["sf"].run()
             logging.info("Site finding completed.")
@@ -236,14 +272,21 @@ def find_sites(
 def find_reports(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
     env_file: EnvFileOption = None,
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV, # Needed for company context in init
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV, # Needed for company context in init
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
 ):
     """Finds financial reports for companies with known sites."""
     async def _run():
         services = None
         try:
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                None,
+                None,
+                pdf_dir,
+                env_file,
+            )
             logging.info("Starting financial report finder...")
             await services["finfinder"].run()
             logging.info("Financial report finding completed.")
@@ -259,14 +302,21 @@ def find_reports(
 def download_reports(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
     env_file: EnvFileOption = None,
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV, # Needed for company context in init
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV, # Needed for company context in init
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
 ):
     """Downloads financial reports that have been found."""
     async def _run():
         services = None
         try:
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                None,
+                None,
+                pdf_dir,
+                env_file,
+            )
             logging.info("Starting report downloader...")
             await services["rep_dler"].run()
             logging.info("Report downloading completed.")
@@ -282,7 +332,7 @@ def download_reports(
 def upload_reports(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY, # Passed to ReportUploader
     env_file: EnvFileOption = None,
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV, # Needed for company context in init
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV, # Needed for company context in init
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
 ):
     """
@@ -293,7 +343,14 @@ def upload_reports(
         # Async initialization
         async def _init_services_async():
             nonlocal services
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                None,
+                None,
+                pdf_dir,
+                env_file,
+            )
         asyncio.run(_init_services_async())
 
         if not services:
@@ -318,14 +375,21 @@ def upload_reports(
 def extract_data(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
     env_file: EnvFileOption = None,
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV, # Needed for company context in init
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV, # Needed for company context in init
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
 ):
     """Extracts financial data from downloaded and processed reports."""
     async def _run():
         services = None
         try:
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                None,
+                None,
+                pdf_dir,
+                env_file,
+            )
             logging.info("Starting data extractor...")
             await services["data_extractor"].run()
             logging.info("Data extraction completed.")
@@ -341,14 +405,21 @@ def extract_data(
 def classify_nace(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
     env_file: EnvFileOption = None,
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV, # Needed for company context in init
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV, # Needed for company context in init
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR, # Needed for consistency in initialize_services
 ):
     """Classifies companies using NACE codes based on extracted data."""
     async def _run():
         services = None
         try:
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                None,
+                None,
+                pdf_dir,
+                env_file,
+            )
             logging.info("Starting NACE classifier...")
             await services["nace_class"].run()
             logging.info("NACE classification completed.")
@@ -360,11 +431,46 @@ def classify_nace(
             await cleanup_services(services)
     asyncio.run(_run())
 
+@app.command()
+def export_data(
+    concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
+    env_file: EnvFileOption = None,
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV,
+    extraction_csv: ExtCsvOption = DEFAULT_EXTR_CSV,
+    output_directory: OutputDirectory = DEFAULT_OUTPUT_DIR,
+    pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
+):
+    """Export the discovered and extracted data"""
+    async def _run():
+        services = None
+        try:
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                extraction_csv,
+                output_directory,
+                pdf_dir,
+                env_file,
+            )
+            logging.info("Starting data exporter...")
+            services["data_exporter"].run()
+            logging.info("Data export completed.")
+        except Exception as e:
+            logging.error(f"Error in data export: {e}", exc_info=True)
+            typer.echo(f"Error during data export: {e}", err=True)
+            raise typer.Exit(code=1)
+        finally:
+            await cleanup_services(services)
+    asyncio.run(_run())
+
+
 @app.command(name="all", short_help="Runs the entire data processing pipeline.")
 def run_all_pipeline(
     concurrency: ConcurrencyOption = DEFAULT_CONCURRENCY,
     env_file: EnvFileOption = None,
-    input_csv: InputCsvOption = DEFAULT_INPUT_CSV,
+    discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV,
+    extraction_csv: ExtCsvOption = DEFAULT_EXTR_CSV,
+    output_directory: OutputDirectory = DEFAULT_OUTPUT_DIR,
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
 ):
     """
@@ -375,15 +481,22 @@ def run_all_pipeline(
     4. Upload Reports to GCS
     5. Extract Data
     6. Classify NACE
+    7. Export to CSV
     """
     async def _run_all():
         services = None
         try:
-            services = await initialize_services(concurrency, input_csv, pdf_dir, env_file)
+            services = await initialize_services(
+                concurrency,
+                discovery_csv,
+                extraction_csv,
+                output_directory,
+                pdf_dir, env_file,
+            )
 
             typer.echo(
                 f"Starting full pipeline with concurrency: {concurrency}, "
-                f"input CSV: {input_csv}, PDF directory: {pdf_dir}"
+                f"input CSV: {discovery_csv}, PDF directory: {pdf_dir}"
             )
             if env_file:
                  typer.echo(f"Using env file: {env_file}")
@@ -404,18 +517,8 @@ def run_all_pipeline(
             logging.info("Report downloading completed.")
             typer.echo("✅ Report downloading complete.")
 
-            # report_link_store.fill_solution_csv('./disco_starting_kit/discovery.csv')
-            # This was commented out in original. If needed, it can be a separate command or integrated here.
-
             logging.info("Step 4: Uploading reports...")
-            # services["rep_uploader"].run() is synchronous.
-            # Running in executor if it's CPU bound and long, or if to_thread is preferred.
-            # For now, direct call as it might manage its own threading/IO.
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, services["rep_uploader"].run)
-            except RuntimeError: # No running event loop (e.g. if _run_all was not async)
-                 services["rep_uploader"].run() # Fallback for safety, though _run_all is async
+            services["rep_uploader"].run()
             logging.info("Report uploading completed.")
             typer.echo("✅ Report uploading complete.")
 
@@ -428,6 +531,9 @@ def run_all_pipeline(
             await services["nace_class"].run()
             logging.info("NACE classification completed.")
             typer.echo("✅ NACE classification complete.")
+
+            logging.info("Step 7: Exporting to CSV...")
+            services["data_exporter"].run()
 
             typer.echo("🚀 Pipeline completed successfully.")
 
@@ -443,11 +549,10 @@ def run_all_pipeline(
             logging.error(f"AI content generation error: {gen_err}", exc_info=True)
             typer.echo(f"Error: Failed to generate content using the AI model. Details: {gen_err}", err=True)
             raise typer.Exit(code=1)
-        except typer.BadParameter as param_err: # For CLI validation errors
-            # These are usually handled by Typer itself, but if raised manually from logic:
+        except typer.BadParameter as param_err:
             logging.error(f"Invalid parameter: {param_err.message}", exc_info=True)
             typer.echo(f"Error: Invalid parameter. {param_err.message}", err=True)
-            raise typer.Exit(code=1) # Redundant if Typer handles it, but good for clarity
+            raise typer.Exit(code=1)
         except Exception as e:
             logging.error(f"An unexpected error occurred in pipeline: {e}", exc_info=True)
             typer.echo(f"An unexpected error occurred: {e}", err=True)
