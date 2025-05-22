@@ -6,6 +6,13 @@ import datetime as dt
 import valkey_stores
 
 class DataExporter:
+    """
+    Exports collected company data from Valkey stores into specified CSV formats.
+
+    This class reads template CSV files for "discovery" (e.g., website links, report links)
+    and "extraction" (e.g., financial figures, NACE codes), populates them with data
+    retrieved from various Valkey stores, and saves the updated CSVs to an output directory.
+    """
     def __init__(
         self,
         site_store: valkey_stores.CompanySiteStore,
@@ -16,6 +23,18 @@ class DataExporter:
         extraction_csv_path: str,
         output_dir: str,
     ) -> None:
+        """
+        Initializes the DataExporter.
+
+        Args:
+            site_store: Valkey store for company website information.
+            report_link_store: Valkey store for annual report links.
+            report_info_store: Valkey store for extracted annual report information.
+            nace_store: Valkey store for NACE classification codes.
+            discovery_csv_path: Path to the input CSV template for discovery data.
+            extraction_csv_path: Path to the input CSV template for extraction data.
+            output_dir: Directory where the populated CSV files will be saved.
+        """
         self.site_store = site_store
         self.report_link_store = report_link_store
         self.report_info_store = report_info_store
@@ -31,12 +50,28 @@ class DataExporter:
 
 
     def run(self) -> None:
+        """
+        Executes the data export process for both discovery and extraction data.
+
+        Defines output file paths and calls the respective export methods.
+        The output directory is created if it doesn't exist.
+        """
         extraction_output = os.path.join(self.output_dir,'extraction.csv')
         discovery_output = os.path.join(self.output_dir,'discovery.csv')
         self.export_discovery_data(discovery_output)
         self.export_extraction_data(extraction_output)
 
     def export_discovery_data(self, output_path: str) -> None:
+        """
+        Populates and exports the discovery data CSV.
+
+        This method fills in details like financial report links, reference years,
+        and company website links into a pre-structured "discovery" CSV template.
+        Website reference year is set to the current year.
+
+        Args:
+            output_path: The file path where the populated discovery CSV will be saved.
+        """
         self.discovery_df = self.discovery_df.sort_values(by=['ID', 'TYPE'])
         companies = self.discovery_df.drop_duplicates(subset=['ID'])
         for idx, row in companies.iterrows():
@@ -52,10 +87,11 @@ class DataExporter:
                 report_url = report_link.link
                 report_refyear = report_link.refyear
 
-            # if report info is available, it is likely to contain more accurate
-            # reference year than the one extracted from the website
+            # the later value is usually the more accurate one given how the
+            # competition asks for the refyear to be specified
             if report_info is not None and report_info.reference_year is not None:
-                report_refyear = report_info.reference_year
+                if report_refyear is not None and report_info.reference_year > report_refyear:
+                    report_refyear = report_info.reference_year
 
             if report_url is not None and report_refyear is not None:
                 self.discovery_df.loc[idx, 'SRC'] = report_url
@@ -77,6 +113,17 @@ class DataExporter:
 
 
     def export_extraction_data(self, output_path:str) -> None:
+        """
+        Populates and exports the extraction data CSV.
+
+        This method fills in detailed extracted data points (e.g., turnover, assets,
+        employee count, country, NACE code/activity) into a pre-structured "extraction"
+        CSV template. It uses data from various Valkey stores and sets appropriate
+        source links and reference years. Website source is hardcoded to 'https://google.com'.
+
+        Args:
+            output_path: The file path where the populated extraction CSV will be saved.
+        """
         self.extraction_df = self.extraction_df.sort_values(by=['ID'])
         companies = self.extraction_df.drop_duplicates(subset=['ID']).set_index('ID')
         self.extraction_df = self.extraction_df.set_index(['ID', 'VARIABLE']).sort_index()
@@ -116,9 +163,11 @@ class DataExporter:
                 continue
 
             if report_info.reference_year is not None:
-                # refyear extracted from report is likely to be more accurate
-                # than one from the website
-                report_refyear = report_info.reference_year
+                if report_refyear is None or (
+                    report_refyear is not None
+                    and report_info.reference_year > report_refyear
+                ):
+                    report_refyear = report_info.reference_year
 
             if report_refyear is None:
                 # no points for data with no reference year
