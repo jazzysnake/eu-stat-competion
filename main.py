@@ -42,6 +42,7 @@ DEFAULT_DISCO_CSV = Path("disco_starting_kit/discovery.csv")
 DEFAULT_EXTR_CSV = Path("extra_starting_kit/extraction.csv")
 DEFAULT_PDF_DIR = Path("./pdf_downloads/")
 DEFAULT_OUTPUT_DIR= Path('.')
+DEFAULT_DISCO_CONTAINS_REPORTS = False
 
 
 # --- Helper function for initialization ---
@@ -52,6 +53,7 @@ async def initialize_services(
     output_dir: Path | None,
     pdf_download_dir: Path,
     env_file: Path | None,
+    discovery_contains_reports: bool=False,
 ):
     """Initializes all common services and clients."""
     if env_file and env_file.exists():
@@ -133,6 +135,7 @@ async def initialize_services(
         report_link_store=report_link_store,
         report_download_directory=pdf_dir_str,
         concurrent_threads=concurrency,
+        report_link_csv_path=discovery_csv_path.as_posix() if discovery_contains_reports else None,
     )
     rep_uploader = report_uploader.ReportUploader(
         report_link_store,
@@ -232,6 +235,14 @@ PdfDirOption = Annotated[
     ),
 ]
 
+# --- downlaod-reports CLI options
+DiscoveryContainsReportsOption = Annotated[
+    bool,
+    typer.Option(
+        "--discovery-contains-reports", help="The provided discovery.csv contains already found report links for downloading"
+    ),
+]
+
 
 # --- Typer Commands ---
 
@@ -304,6 +315,7 @@ def download_reports(
     env_file: EnvFileOption = None,
     discovery_csv: DiscoCsvOption = DEFAULT_DISCO_CSV, # Needed for company context in init
     pdf_dir: PdfDirOption = DEFAULT_PDF_DIR,
+    discovery_contains_reports: DiscoveryContainsReportsOption = DEFAULT_DISCO_CONTAINS_REPORTS,
 ):
     """Downloads financial reports that have been found."""
     async def _run():
@@ -316,6 +328,7 @@ def download_reports(
                 None,
                 pdf_dir,
                 env_file,
+                discovery_contains_reports,
             )
             logging.info("Starting report downloader...")
             await services["rep_dler"].run()

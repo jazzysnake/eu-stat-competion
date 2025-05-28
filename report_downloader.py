@@ -2,6 +2,7 @@ import os
 import httpx
 import logging
 import asyncio
+import pandas as pd
 
 import valkey_stores
 
@@ -22,6 +23,7 @@ class ReportDownloader:
         report_link_store: valkey_stores.AnnualReportLinkStore,
         report_download_directory: str,
         concurrent_threads: int = 1,
+        report_link_csv_path: str | None = None,
     ) -> None:
         """Initializes the ReportDownloader.
 
@@ -29,11 +31,32 @@ class ReportDownloader:
             report_link_store: Store for annual report links, used to get URLs.
             report_download_directory: Directory to save downloaded reports.
             concurrent_threads: Number of concurrent threads for downloading files.
+            report_link_csv_path: Path to a csv containing companies annual financial report data
+                                  (expected to be in the format of discovery.csv)
         """
         self.report_link_store = report_link_store
         self.report_download_directory = report_download_directory
         self.concurrent_threads = concurrent_threads
-        self.pdf_downloader = PDFDownloader()
+        self.report_link_csv_path = report_link_csv_path
+        if report_link_csv_path is not None:
+            self.additional_reports = ReportDownloader.read_discovery_csv(report_link_csv_path)
+            for c, r in self.additional_reports:
+                self.report_link_store.store(c, r)
+        headers = {
+            'accept': '*/*',
+            'accept-language': 'en-US,en;q=0.7',
+            'priority': 'u=1, i',
+            'referer': '',
+            'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Brave";v="134"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Linux"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'sec-gpc': '1',
+            'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+        }
+        self.pdf_downloader = PDFDownloader(default_headers=headers)
         self.html_downloader = HTMLDownloader()
 
     async def run(self) -> None:
@@ -64,18 +87,18 @@ class ReportDownloader:
             company: The name of the company to process.
         """
         try:
-            reportlink = self.report_link_store.get(company)
-            if reportlink is None:
+            report_link = self.report_link_store.get(company)
+            if report_link is None:
                 logging.error(f'Report link is missing for company {company}, skipping download')
                 return
-            if reportlink is not None:
+            if report_link is not None:
                 if isinstance(
-                    reportlink,
+                    report_link,
                     AnnualReportLinkWithPaths,
-                ) and reportlink.local_path is not None:
+                ) and report_link.local_path is not None:
                     return
             logging.info(f'Downloading report for {company}...')
-            fname = await self.download_annual_report(reportlink, company)
+            fname = await self.download_annual_report(report_link, company)
             self.report_link_store.add_local_path(company, fname)
         except DownloadError as e:
             logging.error(e, exc_info=True)
@@ -147,4 +170,25 @@ class ReportDownloader:
             return fname
         except Exception as e:
             raise DownloadError(f'Failed to download report for company {company}') from e
+
+    @staticmethod
+    def read_discovery_csv(csv_path: str) -> list[tuple[str, AnnualReportLink]]:
+        """Reads the discovery.csv and return a list of (company name, AnnualReportlink) tuples.
+
+        Args:
+            csv_path: The path to the filled out discovery csv that contains financial report info
+
+        Returns:
+            list[tuple[str, AnnualReportLink]]: The list of company name - financial report pairs
+        """
+        df = pd.read_csv(csv_path, sep=';')
+        df = df.dropna(subset=['SRC'])
+        df = df.query("TYPE == 'FIN_REP'")
+        return [
+            (
+                row['NAME'],
+                AnnualReportLink(link=row['SRC'],refyear=row['REFYEAR'])
+            ) for _, row in df.iterrows()
+        ]
+
 
