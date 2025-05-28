@@ -1,4 +1,5 @@
 import os
+import csv
 import logging
 import pandas as pd
 import datetime as dt
@@ -106,6 +107,8 @@ class DataExporter:
                 site_link = site.official_website_link if site.official_website_link is not None else site.investor_relations_page
             site_refyear = dt.datetime.today().year
             if site_link is not None:
+                if not site_link.startswith('http://') or not site_link.startswith('https://'):
+                    site_link = 'https://'+site_link
                 self.discovery_df.loc[int(idx)+1, 'SRC'] = site_link
                 self.discovery_df.loc[int(idx)+1, 'REFYEAR'] = site_refyear
 
