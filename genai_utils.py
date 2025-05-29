@@ -9,13 +9,17 @@ from valkey_utils import ConfigurationError
 FLASH = 'gemini-2.5-flash-preview-04-17'
 PRO = 'gemini-2.5-pro-preview-03-25'
 
+
 class GenerationError(Exception):
     """Custom exception for errors during AI content generation."""
+
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
+
 class GenaiClient:
     """Client for interacting with Google's Generative AI models (e.g., Gemini)."""
+
     HARM_CATEGORIES = (
         types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
         types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
@@ -24,10 +28,11 @@ class GenaiClient:
         types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
         types.HarmCategory.HARM_CATEGORY_UNSPECIFIED,
     )
+
     def __init__(
         self,
-        api_key:str,
-        model:str=PRO,
+        api_key: str,
+        model: str = PRO,
         harm_block: types.HarmBlockThreshold = types.HarmBlockThreshold.OFF,
     ) -> None:
         """Initializes the GenaiClient.
@@ -47,12 +52,13 @@ class GenaiClient:
             types.SafetySetting(
                 category=category,
                 threshold=harm_block,
-            ) for category in GenaiClient.HARM_CATEGORIES
+            )
+            for category in GenaiClient.HARM_CATEGORIES
         ]
-        self.safety_settings=safety_settings
+        self.safety_settings = safety_settings
 
     @staticmethod
-    def new(model:str=PRO) -> 'GenaiClient':
+    def new(model: str = PRO) -> 'GenaiClient':
         """Creates a new GenaiClient instance using the API key from environment variables.
 
         Args:
@@ -64,10 +70,10 @@ class GenaiClient:
         Raises:
             ValueError: If the 'GEMINI_API_TOKEN' environment variable is not set.
         """
-        api_key=os.environ.get('GEMINI_API_TOKEN')
+        api_key = os.environ.get('GEMINI_API_TOKEN')
         if api_key is None:
             raise ConfigurationError('GEMINI_API_TOKEN variable not set, failed to init client')
-        return GenaiClient(api_key=api_key,model=model)
+        return GenaiClient(api_key=api_key, model=model)
 
     @staticmethod
     def get_simple_message(
@@ -91,10 +97,9 @@ class GenaiClient:
                 ],
             ),
         ]
+
     @staticmethod
-    def get_simple_contents(
-        contents: list[types.Content]
-    ) -> list[dict[str, str | list[str]]]:
+    def get_simple_contents(contents: list[types.Content]) -> list[dict[str, str | list[str]]]:
         """Converts a list of GenAI Content objects to a list of dicts that contain the text only.
 
         This is useful for serialization or logging.
@@ -105,15 +110,12 @@ class GenaiClient:
         Returns:
             A list of dictionaries, where each dictionary has 'role' (str) and
             'parts' (list[str]) keys representing the text parts."""
-        return [
-            {'role': c.role, 'parts': [p.text for p in c.parts]}
-            for c in contents
-        ]
+        return [{'role': c.role, 'parts': [p.text for p in c.parts]} for c in contents]
 
     async def generate(
         self,
         contents: list[types.Content],
-        thinking_budget:int=0,
+        thinking_budget: int = 0,
         response_schema: Type[pydantic.BaseModel] | None = None,
         google_search: bool = False,
         url_context: bool = False,
@@ -139,7 +141,7 @@ class GenaiClient:
         Raises:
             GenerationError: If the content generation API call fails.
         """
-        response_type = "text/plain" if response_schema is None else "application/json"
+        response_type = 'text/plain' if response_schema is None else 'application/json'
         tools = []
         if google_search:
             tools.append(types.Tool(google_search=types.GoogleSearch()))
@@ -147,13 +149,13 @@ class GenaiClient:
             tools.append(types.Tool(url_context=types.UrlContext()))
 
         generate_content_config = types.GenerateContentConfig(
-            thinking_config = types.ThinkingConfig(
+            thinking_config=types.ThinkingConfig(
                 thinking_budget=thinking_budget,
             ),
             response_mime_type=response_type,
             response_schema=response_schema,
             temperature=temperature,
-            tools=tools if tools else None
+            tools=tools if tools else None,
         )
         try:
             response = await self.client.aio.models.generate_content(
@@ -164,4 +166,3 @@ class GenaiClient:
             return response
         except Exception as e:
             raise GenerationError('Failed to generate content') from e
-

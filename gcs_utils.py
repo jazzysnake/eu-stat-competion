@@ -8,8 +8,10 @@ from google.oauth2 import service_account
 
 from valkey_utils import ConfigurationError
 
+
 class GCSClient:
     """A client for interacting with Google Cloud Storage (GCS)."""
+
     def __init__(
         self,
         project_id: str,
@@ -54,10 +56,10 @@ class GCSClient:
             bucket_name = os.environ['GOOGLE_STORAGE_BUCKET_NAME']
             return GCSClient(project_id, keyfile_path, bucket_name)
         except KeyError as e:
-            raise ConfigurationError(f'Failed to initialize GCSClient') from e
+            raise ConfigurationError('Failed to initialize GCSClient') from e
         except ConfigurationError as e:
             raise e
-    
+
     def upload_blob(self, local_path: str, destination_name: str) -> str:
         """Uploads a local file to the GCS bucket.
 
@@ -82,8 +84,10 @@ class GCSClient:
         except FileNotFoundError as e:
             raise Exception(f'Unexpectedly failed to load file from local path {local_path}') from e
 
+
 class GCSBatchUploader:
     """Handles batch uploading of files to Google Cloud Storage using multiple threads."""
+
     def __init__(
         self,
         project_id: str,
@@ -114,7 +118,7 @@ class GCSBatchUploader:
         self.task_queue = queue.Queue()
 
     @staticmethod
-    def new(num_clients:int=4) -> 'GCSBatchUploader':
+    def new(num_clients: int = 4) -> 'GCSBatchUploader':
         """
         Creates a new batch uploader by reading GCS configuration from environment variables.
 
@@ -135,11 +139,11 @@ class GCSBatchUploader:
             bucket_name = os.environ['GOOGLE_STORAGE_BUCKET_NAME']
             return GCSBatchUploader(project_id, keyfile_path, bucket_name, num_clients)
         except KeyError as e:
-            raise ConfigurationError(f'Failed to initialize GCSClient') from e
+            raise ConfigurationError('Failed to initialize GCSClient') from e
         except ConfigurationError as e:
             raise e
 
-    def __upload_worker(self, task: tuple[str,str]) -> str | Exception:
+    def __upload_worker(self, task: tuple[str, str]) -> str | Exception:
         """Worker function for uploading a single file in a separate thread.
 
         Each thread initializes its own GCSClient instance from thread-local storage
@@ -183,12 +187,9 @@ class GCSBatchUploader:
         files = glob.glob(os.path.join(directory, '*'))
         upload_names = [os.path.basename(f) for f in files]
         self.upload_blobs(files, upload_names)
-        
 
     def upload_blobs(
-        self,
-        local_paths: list[str],
-        destination_names: list[str]
+        self, local_paths: list[str], destination_names: list[str]
     ) -> list[tuple[str, str | Exception]]:
         """
         Batch uploads multiple files to GCS using a thread pool.
@@ -211,13 +212,10 @@ class GCSBatchUploader:
         final = [
             (
                 local,
-                f"https://storage.cloud.google.com/{self.bucket_name}/{dest}"
-                if type(res)==str else res
+                f'https://storage.cloud.google.com/{self.bucket_name}/{dest}'
+                if type(res) is str
+                else res,
             )
             for local, dest, res in zip(local_paths, destination_names, results)
         ]
-        return final 
-            
-
-
-
+        return final

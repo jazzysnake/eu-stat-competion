@@ -6,13 +6,17 @@ import valkey_stores
 from models import AnnualReportLinkWithPaths
 from gcs_utils import GCSBatchUploader
 
+
 class UploadError(Exception):
     """Custom exception for errors during report uploading."""
+
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
+
 class ReportUploader:
     """Handles uploading of annual financial reports to Google Cloud Storage."""
+
     def __init__(
         self,
         report_link_store: valkey_stores.AnnualReportLinkStore,
@@ -49,19 +53,24 @@ class ReportUploader:
         report_info = []
         for company, report in zip(companies, reports):
             if not isinstance(report, AnnualReportLinkWithPaths):
-                logging.warning(f'Skipping upload of report for company {company}, not available locally')
+                logging.warning(
+                    f'Skipping upload of report for company {company}, not available locally'
+                )
                 continue
             if report.gcs_link is not None:
                 logging.warning(f'Skipping upload for company {company} as it has a gcs link')
                 continue
             if report.local_path is None:
-                logging.error(f'Local path is unexpectedly missing from database for company {company}, skipping upload')
+                logging.error(
+                    f'Local path is unexpectedly missing from database for company {company}, skipping upload'
+                )
                 continue
-            report_info.append((
+            report_info.append(
+                (
                     company,
                     report.local_path,
                     os.path.basename(report.local_path),
-                    )
+                )
             )
 
         logging.info(f'Starting upload of {len(report_info)} documents')
@@ -69,15 +78,13 @@ class ReportUploader:
             [r[1] for r in report_info],
             [r[2] for r in report_info],
         )
-        
+
         for report_info, result in zip(report_info, results):
             company, _, _ = report_info
             _, res = result
-            if type(res) != str:
+            if type(res) is str:
                 logging.error(f'Failed to upload report of company {company}, error: {res}')
                 continue
             self.report_link_store.add_gcs_link(company, res)
-            
 
         logging.info('Finished report uploads')
-

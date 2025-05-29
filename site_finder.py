@@ -10,10 +10,12 @@ from valkey_stores import ConversationStore, CompanySiteStore
 from models import SiteDiscoveryResponse
 from valkey_utils import ConfigurationError
 
+
 class SiteFinder:
     """
     Finds official company websites and investor relations pages using a generative AI model.
     """
+
     def __init__(
         self,
         gen_client: genai_utils.GenaiClient,
@@ -48,17 +50,17 @@ class SiteFinder:
 
     async def run(self) -> None:
         """Runs the site finding workflow for all configured company names.
-        
+
         An AI model is prompted to find the official site and investor relations page
         for each company. The conversation with the AI, as well as the validated
         result (SiteDiscoveryResponse), is saved in the configured Valkey stores.
         Companies are processed in batches concurrently.
         """
-        logging.info(f"Site finding started")
+        logging.info('Site finding started')
         for company_batch in batched(self.company_names, self.concurrent_threads):
             tasks = [self.process_company(c) for c in company_batch]
             await asyncio.gather(*tasks)
-        logging.info(f"Site finding finished")
+        logging.info('Site finding finished')
 
     async def process_company(
         self,
@@ -74,9 +76,11 @@ class SiteFinder:
             company: The name of the company to process.
         """
         site = self.company_site_store.get(company)
-        if site is not None and (site.official_website_link is not None or site.investor_relations_page is not None):
+        if site is not None and (
+            site.official_website_link is not None or site.investor_relations_page is not None
+        ):
             return
-        logging.info(f"Starting site finding for: {company}")
+        logging.info(f'Starting site finding for: {company}')
         try:
             res = await self.find_site(company)
             self.company_site_store.store(company, res)
@@ -85,8 +89,7 @@ class SiteFinder:
                 f'Failed to find site for company:{company} , cause: {e}',
                 exc_info=True,
             )
-        logging.info(f"Site finding completed for: {company}")
-
+        logging.info(f'Site finding completed for: {company}')
 
     async def find_site(
         self,
@@ -96,7 +99,7 @@ class SiteFinder:
 
         This function prompts the AI to find the official website and investor relations
         page for the specified company.
-        It utilizes the AI model's browsing capabilities and stores the conversation 
+        It utilizes the AI model's browsing capabilities and stores the conversation
         history in the provided ConversationStore.
         The final structured response is parsed into a Pydantic model.
 
@@ -143,7 +146,9 @@ class SiteFinder:
         if validated is not None:
             return validated
         # retry
-        contents += self.genai_client.get_simple_message('The links previously retrieved by you were found to not be working anymore. Try again please, now with different queries. Use the date I provided to try to look for more recent results and do not return the same links.')
+        contents += self.genai_client.get_simple_message(
+            'The links previously retrieved by you were found to not be working anymore. Try again please, now with different queries. Use the date I provided to try to look for more recent results and do not return the same links.'
+        )
 
         self.conversation_store.store(company_name, 'site_find', contents)
         response = await self.genai_client.generate(
@@ -163,7 +168,9 @@ class SiteFinder:
             raise Exception(f'All site results found for {company_name} are invalid')
         return validated
 
-    async def extract_link_from_convo(self,company_name, messages: list[types.Content]) -> SiteDiscoveryResponse:
+    async def extract_link_from_convo(
+        self, company_name, messages: list[types.Content]
+    ) -> SiteDiscoveryResponse:
         """Extracts structured site information from a conversation history using the LLM.
 
         Prompts the LLM to summarize its findings from the prior conversation
@@ -183,7 +190,7 @@ class SiteFinder:
             genai_utils.GenerationError: If the AI fails to generate this structured response.
         """
         messages = messages + genai_utils.GenaiClient.get_simple_message(
-            "Provide the answer in a structured manner. Only include links present in your previous message."
+            'Provide the answer in a structured manner. Only include links present in your previous message.'
         )
         response = await self.genai_client.generate(
             model=genai_utils.FLASH,
@@ -196,9 +203,9 @@ class SiteFinder:
         self.conversation_store.store(company_name, 'site_find', messages)
         return SiteDiscoveryResponse.model_validate_json(response.text)
 
-
-
-    async def validate_result(self, site_response: SiteDiscoveryResponse) -> SiteDiscoveryResponse | None:
+    async def validate_result(
+        self, site_response: SiteDiscoveryResponse
+    ) -> SiteDiscoveryResponse | None:
         """Validates the URLs in a SiteDiscoveryResponse by attempting to crawl them.
 
         If a URL cannot be successfully crawled (e.g., results in an error or
@@ -226,11 +233,12 @@ class SiteFinder:
             if not valid_investors:
                 site_response.investor_relations_page = None
         except Exception as e:
-            logging.error(f'Unexpected Error occured, returning site discovery response unvalidated, error: {e}', exc_info=True)
+            logging.error(
+                f'Unexpected Error occured, returning site discovery response unvalidated, error: {e}',
+                exc_info=True,
+            )
         return site_response
-        
 
-    
     async def validate_link(self, link: str) -> bool:
         """Validates a single URL by attempting to crawl it.
 
@@ -246,5 +254,3 @@ class SiteFinder:
             return r.success
         except Exception:
             return False
-        
-

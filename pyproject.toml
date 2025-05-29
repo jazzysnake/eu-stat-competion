@@ -17,3 +17,15 @@ dependencies = [
     "typer>=0.15.4",
     "valkey[libvalkey]>=6.1.0",
 ]
+
+[project.optional-dependencies]
+devtool = [
+    "ruff>=0.11.11",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "single"
+docstring-code-format = true

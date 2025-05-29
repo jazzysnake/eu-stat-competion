@@ -10,13 +10,17 @@ from utils import batched
 from models import ModelActionResponse, ModelActionResponseWithMetadata, AnnualReportLink
 from valkey_utils import ConfigurationError
 
+
 class CrawlAbortError(Exception):
     """Custom exception raised when the LLM decides to abort crawling for a report."""
+
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
+
 class CrawlState:
     """Represents the state of the crawling process for a single company."""
+
     def __init__(
         self,
         current_url: str,
@@ -34,13 +38,13 @@ class CrawlState:
         self.current_url = current_url
         self.action_history = action_history
         self.url_history = url_history
-        
 
 
 class FinRepFinder:
     """
     Navigates company websites using an LLM to find links to annual financial reports.
     """
+
     def __init__(
         self,
         crawler: crawler.Crawler,
@@ -100,7 +104,7 @@ class FinRepFinder:
             companies = self.site_store.get_companies()
         if len(companies) == 0:
             return
-        
+
         for company_batch in batched(companies, self.concurrent_threads):
             tasks = [self.process_company(c) for c in company_batch]
             await asyncio.gather(*tasks)
@@ -118,14 +122,14 @@ class FinRepFinder:
         Args:
             company: The name of the company to process.
         """
-        existing_report=self.annual_report_link_store.get(company) 
+        existing_report = self.annual_report_link_store.get(company)
         if existing_report is not None and existing_report.link is not None:
             return
         res = await self.find_annual_report(company)
         if res is None or res.link is None:
             logging.warning(f'Could not find report link for {company}')
             return
-        self.annual_report_link_store.store(company,res)
+        self.annual_report_link_store.store(company, res)
 
     async def find_annual_report(self, company: str) -> AnnualReportLink | None:
         """Finds the annual report for a company by crawling its websites.
@@ -145,9 +149,11 @@ class FinRepFinder:
         """
         done = self.model_action_store.get_done_action(company)
         if done is not None:
-            if done.action != 'done': # aborted
+            if done.action != 'done':  # aborted
                 return None
-            refyear = int(done.reference_year.split('-')[0]) if done.reference_year is not None else None
+            refyear = (
+                int(done.reference_year.split('-')[0]) if done.reference_year is not None else None
+            )
             return AnnualReportLink(link=done.link, refyear=refyear)
 
         start_urls = []
@@ -162,16 +168,17 @@ class FinRepFinder:
             start_urls.append(site.official_website_link)
 
         if not start_urls:
-            logging.warning(f'Skipping annual report discovery for {company}, no valid starting link found')
+            logging.warning(
+                f'Skipping annual report discovery for {company}, no valid starting link found'
+            )
             return None
 
         for url in start_urls:
             try:
-                return await self.crawl_to_report(company,url)
+                return await self.crawl_to_report(company, url)
             except ValueError as e:
                 logging.error(str(e))
         return None
-
 
     def format_history_prompt(
         self,
@@ -193,9 +200,8 @@ class FinRepFinder:
         history = sorted(history, key=lambda x: x.action_ts_ms, reverse=False)
         for a in history:
             action_json = a.model_dump(mode='json', exclude={'taken_at_url'})
-            h+=f'URL: {a.taken_at_url}, Action: {action_json}\n'
+            h += f'URL: {a.taken_at_url}, Action: {action_json}\n'
         return h
-
 
     def format_crawl_prompt(
         self,
@@ -231,7 +237,7 @@ class FinRepFinder:
         {history_reminder}
 
         webpage:\n{webpage_markdown}"""
-    
+
     async def __handle_model_interaction(
         self,
         company: str,
@@ -263,13 +269,13 @@ class FinRepFinder:
             genai_utils.GenerationError: If the LLM fails to generate a response or if the response is malformed.
         """
         prompt = self.format_crawl_prompt(
-                page_markdown,
-                state.action_history,
-                state.url_history,
-            )
+            page_markdown,
+            state.action_history,
+            state.url_history,
+        )
         conversation = self.gen_client.get_simple_message(prompt)
 
-        self.conversation_store.store(company, 'report_find',conversation)
+        self.conversation_store.store(company, 'report_find', conversation)
         generation_res = await self.gen_client.generate(
             conversation,
             thinking_budget=1024,
@@ -277,40 +283,42 @@ class FinRepFinder:
             model=genai_utils.PRO,
         )
         conversation.append(generation_res.candidates[0].content)
-        self.conversation_store.store(company, 'report_find',conversation)
+        self.conversation_store.store(company, 'report_find', conversation)
         response = ModelActionResponse.model_validate_json(generation_res.text)
 
         state.url_history.append(state.current_url)
         action = ModelActionResponseWithMetadata(
-                **response.model_dump(),
-                taken_at_url=state.current_url,
-                action_ts_ms=int(dt.datetime.now().timestamp()*1000),
-            )
+            **response.model_dump(),
+            taken_at_url=state.current_url,
+            action_ts_ms=int(dt.datetime.now().timestamp() * 1000),
+        )
         self.model_action_store.store(
             company,
             state.current_url,
             action,
-            (action.action=='done' or action.action =='abort'),
+            (action.action == 'done' or action.action == 'abort'),
         )
-        state.action_history.append(
-            action
-        )
+        state.action_history.append(action)
         if response.action == 'done':
-            refyear = int(response.reference_year.split('-')[0]) if response.reference_year is not None else None
+            refyear = (
+                int(response.reference_year.split('-')[0])
+                if response.reference_year is not None
+                else None
+            )
             return AnnualReportLink(link=response.link, refyear=refyear)
         if action.action == 'abort':
-            raise CrawlAbortError(f"LLM decided to abort crawling")
+            raise CrawlAbortError('LLM decided to abort crawling')
         if action.action == 'visit':
             if action.link_to_visit is None:
                 raise ValueError('Visit action taken with no url to visit')
             state.current_url = action.link_to_visit
         if action.action == 'back':
             if len(state.url_history) < 2:
-                raise ValueError('Back action taken with no previous url')        
+                raise ValueError('Back action taken with no previous url')
             state.current_url = state.url_history[-2]
         return None
 
-    async def crawl_to_report(self, company:str, start_url: str) -> AnnualReportLink | None:
+    async def crawl_to_report(self, company: str, start_url: str) -> AnnualReportLink | None:
         """Crawls websites starting from a given URL to find an annual report.
 
         This method iteratively:
@@ -344,7 +352,7 @@ class FinRepFinder:
                 if retried and page_visits == 0:
                     break
                 if retried:
-                    markdown = f"Failed to crawl {state.current_url}"
+                    markdown = f'Failed to crawl {state.current_url}'
                 retried = True
                 continue
             markdown = res.markdown
@@ -362,7 +370,5 @@ class FinRepFinder:
                 break
             res = None
             page_visits += 1
-            
+
         return report
-
-

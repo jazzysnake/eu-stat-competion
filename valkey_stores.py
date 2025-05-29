@@ -1,7 +1,13 @@
 import json
 import pandas as pd
 
-from models import AnnualReportLink, AnnualReportLinkWithPaths, ModelActionResponseWithMetadata, SiteDiscoveryResponse, AnnualReportInfo
+from models import (
+    AnnualReportLink,
+    AnnualReportLinkWithPaths,
+    ModelActionResponseWithMetadata,
+    SiteDiscoveryResponse,
+    AnnualReportInfo,
+)
 
 import valkey_utils
 
@@ -10,15 +16,17 @@ from typing import Literal
 from google.genai import types
 from genai_utils import GenaiClient
 
+
 class ConversationStore:
     """
     Stores and retrieves conversation histories with AI models in Valkey.
     Conversations are typically related to a specific company and action.
     """
+
     def __init__(
         self,
         client: valkey_utils.ValkeyClient,
-        ) -> None:
+    ) -> None:
         """Initializes the ConversationStore with a Valkey client instance.
 
         Args:
@@ -28,7 +36,7 @@ class ConversationStore:
 
     def store(
         self,
-        company_name:str,
+        company_name: str,
         action: Literal['site_find', 'report_find', 'info_extract', 'nace_classify'],
         conversation_contents: list[types.Content],
     ) -> None:
@@ -47,7 +55,7 @@ class ConversationStore:
         k = ConversationStore.__create_key(company_name, action)
         simple_contents = GenaiClient.get_simple_contents(conversation_contents)
 
-        mapping = {f'message:{i}':json.dumps(c) for i,c in enumerate(simple_contents)}
+        mapping = {f'message:{i}': json.dumps(c) for i, c in enumerate(simple_contents)}
         self.client.client.hset(k, mapping=mapping)
 
     @staticmethod
@@ -64,15 +72,17 @@ class ConversationStore:
         """
         return f'conversation:{action}:{company_name}'
 
+
 class CompanySiteStore:
     """
     Stores and retrieves company website information (official site, investor relations page)
     in Valkey.
     """
+
     def __init__(
         self,
         client: valkey_utils.ValkeyClient,
-        ) -> None:
+    ) -> None:
         """Initializes the CompanySiteStore with a Valkey client instance.
 
         Args:
@@ -82,7 +92,7 @@ class CompanySiteStore:
 
     def store(
         self,
-        company_name:str,
+        company_name: str,
         site_discovery_result: SiteDiscoveryResponse,
     ) -> None:
         """Adds or updates a site discovery result to the Valkey store.
@@ -110,7 +120,7 @@ class CompanySiteStore:
         keys = self.client.client.keys('site_discovery:*')
         return [k.split(':')[-1] for k in keys]
 
-    def get(self, company: str) -> SiteDiscoveryResponse| None:
+    def get(self, company: str) -> SiteDiscoveryResponse | None:
         """Retrieves the stored site discovery information for a specific company.
 
         Args:
@@ -128,7 +138,6 @@ class CompanySiteStore:
             investor_relations_page=res.get('investor_relations_page'),
         )
 
-
     @staticmethod
     def __create_key(company_name: str) -> str:
         """Creates a standardized Valkey key for storing site discovery data.
@@ -141,12 +150,14 @@ class CompanySiteStore:
         """
         return f'site_discovery:{company_name}'
 
+
 class ModelActionStore:
     """
     Stores and manages sequences of actions taken by an AI model during tasks
     like web crawling (e.g., finding financial reports). It tracks the actions,
     the URL navigation queue, and whether a task is considered "done".
     """
+
     def __init__(
         self,
         valkey_client: valkey_utils.ValkeyClient,
@@ -189,7 +200,7 @@ class ModelActionStore:
 
         urlq_k = ModelActionStore.__create_urlqueue_key(company_name)
         if model_action.action == 'visit':
-            self.valkey_client.client.zadd(urlq_k, mapping={url:model_action.action_ts_ms})
+            self.valkey_client.client.zadd(urlq_k, mapping={url: model_action.action_ts_ms})
         elif model_action.action == 'back':
             current_url = self.get_current_url(company_name)
             if current_url is not None:
@@ -200,7 +211,7 @@ class ModelActionStore:
         ck = ModelActionStore.__create_done_key(company_name)
         self.valkey_client.client.set(ck, k)
 
-    def get(self,company: str, url:str) -> ModelActionResponseWithMetadata | None:
+    def get(self, company: str, url: str) -> ModelActionResponseWithMetadata | None:
         """Retrieves a specific model action for a company, URL, and timestamp.
 
         Args:
@@ -217,10 +228,7 @@ class ModelActionStore:
             return res
         return ModelActionResponseWithMetadata.model_validate(res)
 
-    def get_all_actions(
-        self,
-        company: str
-    ) -> list[ModelActionResponseWithMetadata]:
+    def get_all_actions(self, company: str) -> list[ModelActionResponseWithMetadata]:
         """Retrieves all stored model actions for a specific company, sorted by timestamp.
 
         Args:
@@ -235,11 +243,7 @@ class ModelActionStore:
         for k in ks:
             p.hgetall(k)
         res = p.execute()
-        return [
-            ModelActionResponseWithMetadata.model_validate(r)
-            for r in res
-            if r is not None
-        ]
+        return [ModelActionResponseWithMetadata.model_validate(r) for r in res if r is not None]
 
     def del_all(
         self,
@@ -262,8 +266,7 @@ class ModelActionStore:
         p.delete(donek)
         p.execute()
 
-
-    def get_current_url(self, company:str) -> str | None:
+    def get_current_url(self, company: str) -> str | None:
         """Retrieves the most recent URL from the navigation stack (URL queue) for a company.
 
         The URL queue is a sorted set scored by timestamp. This gets the URL with the highest score.
@@ -276,12 +279,12 @@ class ModelActionStore:
                         or None if the queue is empty.
         """
         urlq_k = ModelActionStore.__create_urlqueue_key(company)
-        r = self.valkey_client.client.zrevrange(urlq_k, 0,0,False)
+        r = self.valkey_client.client.zrevrange(urlq_k, 0, 0, False)
         if not r:
             return None
         return r[0]
 
-    def get_full_url_queue(self, company:str) -> None | list[str]:
+    def get_full_url_queue(self, company: str) -> None | list[str]:
         """Retrieves the entire navigation stack (URL queue) for a company, ordered by visit time.
 
         Args:
@@ -292,11 +295,10 @@ class ModelActionStore:
                                or None if the queue is empty.
         """
         urlq_k = ModelActionStore.__create_urlqueue_key(company)
-        r = self.valkey_client.client.zrange(urlq_k, 0,-1,False)
+        r = self.valkey_client.client.zrange(urlq_k, 0, -1, False)
         if r is None:
             return None
         return r
-
 
     def get_done_action(self, company: str) -> ModelActionResponseWithMetadata | None:
         """Retrieves the action that was marked as 'done' or 'abort' for a company.
@@ -313,12 +315,11 @@ class ModelActionStore:
         done_action_key = self.valkey_client.client.get(ModelActionStore.__create_done_key(company))
         if not done_action_key:
             return
-        res =self.valkey_client.client.hgetall(done_action_key)
+        res = self.valkey_client.client.hgetall(done_action_key)
         return ModelActionResponseWithMetadata.model_validate(res)
 
-
     @staticmethod
-    def __create_key(company: str,url: str) -> str:
+    def __create_key(company: str, url: str) -> str:
         """Creates a Valkey key for a specific model action.
         Args:
             company: Company name.
@@ -357,11 +358,11 @@ class AnnualReportLinkStore:
     Stores and manages links to annual financial reports, including local paths
     and GCS links once downloaded/uploaded.
     """
+
     def __init__(
         self,
         client: valkey_utils.ValkeyClient,
-        ) -> None:
-
+    ) -> None:
         """Initializes the AnnualReportLinkStore.
 
         Args:
@@ -371,7 +372,7 @@ class AnnualReportLinkStore:
 
     def store(
         self,
-        company_name:str,
+        company_name: str,
         annual_report_link: AnnualReportLink,
     ) -> None:
         """Stores or updates an annual report link for a company.
@@ -389,7 +390,7 @@ class AnnualReportLinkStore:
     def add_gcs_link(
         self,
         company_name: str,
-        gcs_link:str,
+        gcs_link: str,
     ) -> None:
         """Adds or updates the GCS link for a company's stored annual report.
 
@@ -442,7 +443,7 @@ class AnnualReportLinkStore:
         k = AnnualReportLinkStore.__create_key(company_name)
         report = self.client.client.hgetall(k)
         if report is None:
-            return 
+            return
         if report.get('gcs_link') is not None or report.get('local_path') is not None:
             return AnnualReportLinkWithPaths(
                 link=report.get('link'),
@@ -451,9 +452,9 @@ class AnnualReportLinkStore:
                 refyear=report.get('refyear'),
             )
         return AnnualReportLink(
-                link=report.get('link'),
-                refyear=report.get('refyear'),
-            )
+            link=report.get('link'),
+            refyear=report.get('refyear'),
+        )
 
     def get_companies(self) -> list[str]:
         """Retrieves a list of all company names for which annual report links are stored.
@@ -463,10 +464,11 @@ class AnnualReportLinkStore:
         """
         prefix = AnnualReportLinkStore.__create_key('')
         return [
-            k.removeprefix(prefix) 
-            for k in self.client.client.keys(AnnualReportLinkStore.__create_key('*'))]
+            k.removeprefix(prefix)
+            for k in self.client.client.keys(AnnualReportLinkStore.__create_key('*'))
+        ]
 
-    def fill_solution_csv(self, path_to_csv: str, separator:str =';') -> None:
+    def fill_solution_csv(self, path_to_csv: str, separator: str = ';') -> None:
         """Populates a CSV file with found annual report links and reference years.
 
         This method is designed to update a specific CSV format, likely for a
@@ -490,7 +492,9 @@ class AnnualReportLinkStore:
             if link.refyear is not None:
                 data.loc[(company, 'FIN_REP'), 'REFYEAR'] = link.refyear
         data = data.reset_index().sort_values(by=['ID', 'TYPE'], ascending=[True, True])
-        data[['ID', 'NAME', 'TYPE', 'SRC', 'REFYEAR']].to_csv(path_to_csv, sep=separator, na_rep='', index=False)
+        data[['ID', 'NAME', 'TYPE', 'SRC', 'REFYEAR']].to_csv(
+            path_to_csv, sep=separator, na_rep='', index=False
+        )
 
     @staticmethod
     def __create_key(company_name: str) -> str:
@@ -502,15 +506,17 @@ class AnnualReportLinkStore:
         """
         return f'annual_report_link:{company_name}'
 
+
 class AnnualReportInfoStore:
     """
     Stores and retrieves extracted financial and general information from annual reports
     (e.g., employee count, assets value, main activity) in Valkey.
     """
+
     def __init__(
         self,
         client: valkey_utils.ValkeyClient,
-        ) -> None:
+    ) -> None:
         """Initializes the AnnualReportInfoStore.
 
         Args:
@@ -520,7 +526,7 @@ class AnnualReportInfoStore:
 
     def store(
         self,
-        company_name:str,
+        company_name: str,
         annual_report: AnnualReportInfo,
     ) -> None:
         """Stores or updates extracted annual report information for a company.
@@ -572,10 +578,9 @@ class AnnualReportInfoStore:
         """
         prefix = AnnualReportInfoStore.__create_key('')
         return [
-            k.removeprefix(prefix) 
-            for k in self.client.client.keys(AnnualReportInfoStore.__create_key('*'))]
-
-
+            k.removeprefix(prefix)
+            for k in self.client.client.keys(AnnualReportInfoStore.__create_key('*'))
+        ]
 
     @staticmethod
     def __create_key(company: str) -> str:
@@ -587,11 +592,13 @@ class AnnualReportInfoStore:
         """
         return f'annual_report_info:{company}'
 
+
 class NaceClassificationStore:
     """
     Stores and retrieves NACE classification codes for companies in Valkey.
     The NACE code is stored as a simple string value.
     """
+
     def __init__(
         self,
         client: valkey_utils.ValkeyClient,
@@ -619,7 +626,7 @@ class NaceClassificationStore:
         k = NaceClassificationStore.__create_key(company_name)
         self.client.client.set(k, nace_classification)
 
-    def get(self,company_name: str) -> str | None:
+    def get(self, company_name: str) -> str | None:
         """Retrieves the NACE classification code for a company.
 
         Args:

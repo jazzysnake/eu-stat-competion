@@ -1,10 +1,10 @@
 import os
-import csv
 import logging
 import pandas as pd
 import datetime as dt
 
 import valkey_stores
+
 
 class DataExporter:
     """
@@ -14,6 +14,7 @@ class DataExporter:
     and "extraction" (e.g., financial figures, NACE codes), populates them with data
     retrieved from various Valkey stores, and saves the updated CSVs to an output directory.
     """
+
     def __init__(
         self,
         site_store: valkey_stores.CompanySiteStore,
@@ -49,7 +50,6 @@ class DataExporter:
         self.extraction_df['SRC'] = self.extraction_df['SRC'].astype(object)
         self.extraction_df['CURRENCY'] = self.extraction_df['CURRENCY'].astype(object)
 
-
     def run(self) -> None:
         """
         Executes the data export process for both discovery and extraction data.
@@ -57,8 +57,8 @@ class DataExporter:
         Defines output file paths and calls the respective export methods.
         The output directory is created if it doesn't exist.
         """
-        extraction_output = os.path.join(self.output_dir,'extraction.csv')
-        discovery_output = os.path.join(self.output_dir,'discovery.csv')
+        extraction_output = os.path.join(self.output_dir, 'extraction.csv')
+        discovery_output = os.path.join(self.output_dir, 'discovery.csv')
         self.export_discovery_data(discovery_output)
         self.export_extraction_data(extraction_output)
 
@@ -76,7 +76,7 @@ class DataExporter:
         self.discovery_df = self.discovery_df.sort_values(by=['ID', 'TYPE'])
         companies = self.discovery_df.drop_duplicates(subset=['ID'])
         for idx, row in companies.iterrows():
-            company:str = row['NAME']
+            company: str = row['NAME']
 
             # fill in financial report link
             report_link = self.report_link_store.get(company)
@@ -98,24 +98,26 @@ class DataExporter:
                 self.discovery_df.loc[idx, 'SRC'] = report_url
                 self.discovery_df.loc[idx, 'REFYEAR'] = report_refyear
 
-
             # fill in site data
             site = self.site_store.get(company)
 
             site_link = None
             if site is not None:
-                site_link = site.official_website_link if site.official_website_link is not None else site.investor_relations_page
+                site_link = (
+                    site.official_website_link
+                    if site.official_website_link is not None
+                    else site.investor_relations_page
+                )
             site_refyear = dt.datetime.today().year
             if site_link is not None:
                 if not site_link.startswith('http://') or not site_link.startswith('https://'):
-                    site_link = 'https://'+site_link
-                self.discovery_df.loc[int(idx)+1, 'SRC'] = site_link
-                self.discovery_df.loc[int(idx)+1, 'REFYEAR'] = site_refyear
+                    site_link = 'https://' + site_link
+                self.discovery_df.loc[int(idx) + 1, 'SRC'] = site_link
+                self.discovery_df.loc[int(idx) + 1, 'REFYEAR'] = site_refyear
 
         self.discovery_df.to_csv(output_path, sep=';', index=False)
 
-
-    def export_extraction_data(self, output_path:str) -> None:
+    def export_extraction_data(self, output_path: str) -> None:
         """
         Populates and exports the extraction data CSV.
 
@@ -132,7 +134,7 @@ class DataExporter:
         self.extraction_df = self.extraction_df.set_index(['ID', 'VARIABLE']).sort_index()
         current_year = dt.datetime.today().year
         for id, row in companies.iterrows():
-            company:str = row['NAME']
+            company: str = row['NAME']
 
             report_link = self.report_link_store.get(company)
             report_info = self.report_info_store.get(company)
@@ -148,7 +150,11 @@ class DataExporter:
             country = None
 
             if site is not None:
-                website = site.official_website_link if site.official_website_link is not None else site.investor_relations_page
+                website = (
+                    site.official_website_link
+                    if site.official_website_link is not None
+                    else site.investor_relations_page
+                )
 
             if website is not None:
                 self.extraction_df.loc[(id, 'WEBSITE'), 'VALUE'] = website
@@ -167,8 +173,7 @@ class DataExporter:
 
             if report_info.reference_year is not None:
                 if report_refyear is None or (
-                    report_refyear is not None
-                    and report_info.reference_year > report_refyear
+                    report_refyear is not None and report_info.reference_year > report_refyear
                 ):
                     report_refyear = report_info.reference_year
 
@@ -182,7 +187,6 @@ class DataExporter:
             assets_curr = report_info.currency_code_assets
             employees = report_info.employee_count
             country = report_info.country_code
-
 
             if country is not None:
                 self.extraction_df.loc[(id, 'COUNTRY'), 'VALUE'] = country
@@ -213,4 +217,3 @@ class DataExporter:
 
         self.extraction_df = self.extraction_df.reset_index()
         self.extraction_df.to_csv(output_path, sep=';', index=False)
-

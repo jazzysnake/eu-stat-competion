@@ -3,6 +3,7 @@ import urllib.parse as urlp
 import aiofiles
 from typing import Optional, Dict, Any
 
+
 class PDFDownloader:
     """
     A class to download PDF files using httpx, supporting both sync and async.
@@ -38,11 +39,9 @@ class PDFDownloader:
                             (e.g., timeout, limits, proxies).
         """
         effective_client_options = client_options or {}
-        effective_headers = {
-            **(default_headers or {})
-        }
+        effective_headers = {**(default_headers or {})}
         effective_client_options.setdefault('follow_redirects', True)
-        effective_client_options.setdefault('timeout', 30.0) # Default timeout
+        effective_client_options.setdefault('timeout', 30.0)  # Default timeout
 
         # Initialize clients
         self.sync_client = httpx.Client(
@@ -53,7 +52,7 @@ class PDFDownloader:
             headers=effective_headers,
             **effective_client_options,
         )
-        self._chunk_size = 8192 # Internal chunk size for streaming
+        self._chunk_size = 8192  # Internal chunk size for streaming
 
     async def is_pdf(
         self,
@@ -65,7 +64,6 @@ class PDFDownloader:
         res = await self.async_client.get(url)
         res.raise_for_status()
         return 'application/pdf' in res.headers.get('Content-Type')
-
 
     def download_sync(
         self,
@@ -83,13 +81,12 @@ class PDFDownloader:
             The Path object of the downloaded file if successful, None otherwise.
         """
 
-        with self.sync_client.stream("GET", url) as response:
+        with self.sync_client.stream('GET', url) as response:
             response.raise_for_status()
 
-            with open(filename, "wb") as f:
+            with open(filename, 'wb') as f:
                 for chunk in response.iter_bytes(chunk_size=self._chunk_size):
                     f.write(chunk)
-
 
     async def download_async(
         self,
@@ -107,11 +104,17 @@ class PDFDownloader:
         Returns:
             The path of the downloaded file if successful, None otherwise.
         """
-        headers = None if not spoof_browser_user_agent else {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'}
-        async with self.async_client.stream("GET", url, headers=headers) as response:
+        headers = (
+            None
+            if not spoof_browser_user_agent
+            else {
+                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
+            }
+        )
+        async with self.async_client.stream('GET', url, headers=headers) as response:
             response.raise_for_status()
 
-            async with aiofiles.open(filename, "wb") as f:
+            async with aiofiles.open(filename, 'wb') as f:
                 async for chunk in response.aiter_bytes(chunk_size=self._chunk_size):
                     await f.write(chunk)
 

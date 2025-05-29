@@ -1,5 +1,6 @@
 import itertools
 
+
 def batched(iterable, n, *, strict=False):
     """Yields successive n-sized chunks from an iterable.
 
@@ -15,7 +16,7 @@ def batched(iterable, n, *, strict=False):
     Raises:
         ValueError: If n is less than 1.
         ValueError: If `strict` is True and the last batch is incomplete.
-    
+
     Example:
         >>> list(batched('ABCDEFG', 3))
         [('A', 'B', 'C'), ('D', 'E', 'F'), ('G',)]
@@ -29,4 +30,3 @@ def batched(iterable, n, *, strict=False):
         if strict and len(batch) != n:
             raise ValueError('batched(): incomplete batch')
         yield batch
-

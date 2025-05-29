@@ -11,12 +11,14 @@ import valkey_stores
 
 from utils import batched
 
+
 class FinDataExtractor:
     """
     Class that handles financial data extraction from annual reports.
     It uses a generative AI model to parse report files (PDF or HTML)
     and extract key financial figures and company information.
     """
+
     def __init__(
         self,
         gen_client: genai_utils.GenaiClient,
@@ -42,7 +44,6 @@ class FinDataExtractor:
         self.report_directory = report_directory
         self.report_info_store = report_info_store
         self.concurrent_threads = concurrent_threads
-
 
     async def run(self) -> None:
         """
@@ -82,19 +83,20 @@ class FinDataExtractor:
                     buffer = await f.read()
 
                 mime = 'application/pdf' if link.local_path.endswith('.pdf') else 'text/html'
-                attached_report = types.Part.from_bytes(data=buffer,mime_type=mime)
-            except Exception as e:
-                logging.error(f'Failed to read report from disk for company {company}, falling back to url context')
+                attached_report = types.Part.from_bytes(data=buffer, mime_type=mime)
+            except Exception:
+                logging.error(
+                    f'Failed to read report from disk for company {company}, falling back to url context'
+                )
         try:
             if attached_report is None:
                 attached_report = link.link
-            report = await self.extract_data_from_report(company,attached_report)
+            report = await self.extract_data_from_report(company, attached_report)
             self.report_info_store.store(company, report)
 
         except Exception as e:
             logging.error(f'Failed to extract data from report for company: {company}, cause {e}')
 
-        
     async def extract_data_from_report(
         self,
         company: str,
@@ -130,16 +132,16 @@ class FinDataExtractor:
         - Avoid repeating marketing slop when summarizing the main activity. Look at the facts and collect the main industries and sectors the company participates in (if possible order them by priority).
         """
         use_url_context = False
-        if type(report) == str:
+        if type(report) is str:
             use_url_context = True
             schema = json.dumps(models.AnnualReportInfo.model_json_schema())
             prompt += f""" IMPORTANT!
             - You can find the report at {report}, use tools to view the file content, do not answer without it.
             - Output the your answer in plain json without any formatting according to the following json schema: {schema}
             """
-        #if type(report) != str:
+        # if type(report) != str:
         #    raise ValueError('report must be types.Part or str')
-        #    
+        #
         msg = self.gen_client.get_simple_message(prompt)
         self.conversation_store.store(
             company,
@@ -165,5 +167,3 @@ class FinDataExtractor:
         )
         clean_res = res.text.removeprefix('```json\n').removesuffix('\n```')
         return models.AnnualReportInfo.model_validate_json(clean_res)
-
-
