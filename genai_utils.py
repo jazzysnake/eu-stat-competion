@@ -116,6 +116,7 @@ class GenaiClient:
         thinking_budget:int=0,
         response_schema: Type[pydantic.BaseModel] | None = None,
         google_search: bool = False,
+        url_context: bool = False,
         model: str | None = None,
         temperature: float = 0,
     ) -> types.GenerateContentResponse:
@@ -139,6 +140,12 @@ class GenaiClient:
             GenerationError: If the content generation API call fails.
         """
         response_type = "text/plain" if response_schema is None else "application/json"
+        tools = []
+        if google_search:
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
+        if url_context:
+            tools.append(types.Tool(url_context=types.UrlContext()))
+
         generate_content_config = types.GenerateContentConfig(
             thinking_config = types.ThinkingConfig(
                 thinking_budget=thinking_budget,
@@ -146,9 +153,7 @@ class GenaiClient:
             response_mime_type=response_type,
             response_schema=response_schema,
             temperature=temperature,
-            tools=[
-                types.Tool(google_search=types.GoogleSearch())
-            ] if google_search else None
+            tools=tools if tools else None
         )
         try:
             response = await self.client.aio.models.generate_content(

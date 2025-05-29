@@ -1,5 +1,7 @@
+import json
 import logging
 import asyncio
+import aiofiles
 
 from google.genai import types
 
@@ -69,21 +71,24 @@ class FinDataExtractor:
         if extracted_data is not None:
             return
         link = self.report_link_store.get(company)
-        if not isinstance(link, models.AnnualReportLinkWithPaths):
-            logging.warning(f'Skipping data extraction for {company}, as report is not available locally')
+        if link is None or link.link is None:
+            logging.warning(f'Annual report link is missing for company {company}')
             return
-        if link is None or link.local_path is None:
-            # keep the linter happy, previous condition makes this redundant
-            logging.warning(f'Local path is missing, fallback to GCS/download is not yet implemented, skipping company {company}')
-            return
-        try:
-            buffer = None
-            with open(link.local_path, 'rb') as f:
-                buffer = f.read()
+        attached_report = None
+        if isinstance(link, models.AnnualReportLinkWithPaths) and link.local_path is not None:
+            try:
+                buffer = None
+                async with aiofiles.open(link.local_path, 'rb') as f:
+                    buffer = await f.read()
 
-            mime = 'application/pdf' if link.local_path.endswith('.pdf') else 'text/html'
-            file = types.Part.from_bytes(data=buffer,mime_type=mime)
-            report = await self.extract_data_from_report(company,file)
+                mime = 'application/pdf' if link.local_path.endswith('.pdf') else 'text/html'
+                attached_report = types.Part.from_bytes(data=buffer,mime_type=mime)
+            except Exception as e:
+                logging.error(f'Failed to read report from disk for company {company}, falling back to url context')
+        try:
+            if attached_report is None:
+                attached_report = link.link
+            report = await self.extract_data_from_report(company,attached_report)
             self.report_info_store.store(company, report)
 
         except Exception as e:
@@ -93,7 +98,7 @@ class FinDataExtractor:
     async def extract_data_from_report(
         self,
         company: str,
-        report_file: types.Part,
+        report: types.Part | str,
     ) -> models.AnnualReportInfo:
         """
         Extracts financial data from a single report via an LLM.
@@ -104,8 +109,8 @@ class FinDataExtractor:
 
         Args:
             company: The name of the company.
-            report_file: The report file content as a `google.genai.types.Part`
-                         (either PDF or HTML).
+            report: The report file content as a `google.genai.types.Part`
+                         (either PDF or HTML) or link to the file.
 
         Returns:
             models.AnnualReportInfo: An object containing the extracted financial
@@ -124,18 +129,31 @@ class FinDataExtractor:
         - Only extract information you explicitly found in the attached document, base your answer on facts.
         - Avoid repeating marketing slop when summarizing the main activity. Look at the facts and collect the main industries and sectors the company participates in (if possible order them by priority).
         """
+        use_url_context = False
+        if type(report) == str:
+            use_url_context = True
+            schema = json.dumps(models.AnnualReportInfo.model_json_schema())
+            prompt += f""" IMPORTANT!
+            - You can find the report at {report}, use tools to view the file content, do not answer without it.
+            - Output the your answer in plain json without any formatting according to the following json schema: {schema}
+            """
+        #if type(report) != str:
+        #    raise ValueError('report must be types.Part or str')
+        #    
         msg = self.gen_client.get_simple_message(prompt)
         self.conversation_store.store(
             company,
             'info_extract',
             msg,
         )
-        msg[0].parts.append(report_file)
+        if not use_url_context:
+            msg[0].parts.append(report)
         res = await self.gen_client.generate(
             msg,
             thinking_budget=2048,
-            model=genai_utils.PRO,
-            response_schema=models.AnnualReportInfo,
+            model=genai_utils.PRO if not use_url_context else 'gemini-2.5-pro-preview-05-06',
+            response_schema=models.AnnualReportInfo if not use_url_context else None,
+            url_context=use_url_context,
         )
         if res.candidates is None:
             raise genai_utils.GenerationError('Failed to generate response')
@@ -145,6 +163,7 @@ class FinDataExtractor:
             'info_extract',
             msg,
         )
-        return models.AnnualReportInfo.model_validate_json(res.text)
+        clean_res = res.text.removeprefix('```json\n').removesuffix('\n```')
+        return models.AnnualReportInfo.model_validate_json(clean_res)
 
 
